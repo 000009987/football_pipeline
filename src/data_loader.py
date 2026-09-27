@@ -6,6 +6,7 @@ Descarga datos históricos y fixtures desde:
 """
 
 import os
+import re
 import time
 import json
 import requests
@@ -63,12 +64,12 @@ def _save_cache(name: str, data):
     with open(_cache_path(name), "w") as f:
         json.dump(data, f)
 
+
 def _normalize_df_teams(df: pd.DataFrame) -> pd.DataFrame:
     """
     Normaliza nombres de equipos en un DataFrame completo.
     Unifica nombres cortos de CSVs con nombres largos de la API.
     """
-    # Importar el mapa desde feature_engineering
     try:
         from src.feature_engineering import TEAM_NAME_MAP, normalize_team_name
         if "home_team" in df.columns:
@@ -79,6 +80,7 @@ def _normalize_df_teams(df: pd.DataFrame) -> pd.DataFrame:
         pass
     return df
 
+
 # ── Histórico (resultados) ─────────────────────────────────────────────────────
 
 def fetch_historical_matches(competition: str, season: str) -> pd.DataFrame:
@@ -88,7 +90,7 @@ def fetch_historical_matches(competition: str, season: str) -> pd.DataFrame:
     """
     cache_key = f"matches_{competition}_{season}"
     cached = _load_cache(cache_key, max_hours=24)
-    
+
     if cached:
         print(f"  [{competition} {season}] usando caché")
         raw = cached
@@ -98,7 +100,7 @@ def fetch_historical_matches(competition: str, season: str) -> pd.DataFrame:
                    params={"season": season, "status": "FINISHED"})
         if raw:
             _save_cache(cache_key, raw)
-        time.sleep(7)   # respeto rate limit plan free
+        time.sleep(7)
 
     if not raw or "matches" not in raw:
         return pd.DataFrame()
@@ -130,16 +132,24 @@ def fetch_historical_matches(competition: str, season: str) -> pd.DataFrame:
 
 def fetch_all_historical(competitions: list = None, seasons: list = None) -> pd.DataFrame:
     """Descarga histórico de todas las ligas configuradas."""
-    competitions = competitions or list(LEAGUES.keys())
-    seasons      = seasons or SEASONS
-    
+    seasons = seasons or SEASONS
+
+    # Ligas cubiertas por CSV (football-data.co.uk) — se excluyen de la API
+    csv_covered = {re.sub(r"_\d{4}$", "", name) for name in EXTRA_LEAGUES_CSV.keys()}
+
+    # Liga(s) sin CSV: se piden a la API
+    if competitions is None:
+        competitions = [c for c in LEAGUES.keys() if c not in csv_covered]
+    else:
+        competitions = [c for c in competitions if c not in csv_covered]
+
     all_dfs = []
     for comp in competitions:
         for season in seasons:
             df = fetch_historical_matches(comp, season)
             if not df.empty:
                 all_dfs.append(df)
-    
+
     # Extra leagues from CSV
     for league_name, url in EXTRA_LEAGUES_CSV.items():
         df = _fetch_csv_league(league_name, url)
@@ -150,12 +160,27 @@ def fetch_all_historical(competitions: list = None, seasons: list = None) -> pd.
         return pd.DataFrame()
 
     combined = pd.concat(all_dfs, ignore_index=True)
+
+    # Normalizar nombre de competición: quitar sufijo _YYZZ (PL_2324 -> PL)
+    combined["competition"] = (
+        combined["competition"]
+        .astype(str)
+        .str.replace(r"_\d{4}$", "", regex=True)
+    )
+
+    # Dedup por partido, priorizando filas con odds
+    combined["_has_odds"] = combined["odds_home"].notna()
+    combined = combined.sort_values("_has_odds", ascending=False)
+    combined = combined.drop_duplicates(
+        subset=["competition", "date", "home_team", "away_team"],
+        keep="first",
+    )
+    combined = combined.drop(columns=["_has_odds"])
+
     combined = combined.sort_values("date").reset_index(drop=True)
-    
-    # Normalizar nombres al consolidar
     combined = _normalize_df_teams(combined)
-    
-    print(f"\n✓ Total partidos históricos cargados: {len(combined):,}")
+
+    print(f"\nTotal partidos históricos cargados: {len(combined):,}")
     return combined
 
 
@@ -163,7 +188,7 @@ def _fetch_csv_league(league_name: str, url: str) -> pd.DataFrame:
     """Descarga CSV de football-data.co.uk y lo estandariza."""
     cache_key = f"csv_{league_name}"
     csv_path  = RAW_DIR / f"{cache_key}.csv"
-    
+
     if csv_path.exists() and (time.time() - csv_path.stat().st_mtime) < 86400:
         print(f"  [{league_name}] usando caché CSV")
         raw = pd.read_csv(csv_path, encoding="latin1")
@@ -183,15 +208,19 @@ def _fetch_csv_league(league_name: str, url: str) -> pd.DataFrame:
         "B365H": "odds_home", "B365D": "odds_draw", "B365A": "odds_away",
     }
     raw = raw.rename(columns={k: v for k, v in col_map.items() if k in raw.columns})
-    
+
     required = ["date", "home_team", "away_team", "home_goals", "away_goals"]
     if not all(c in raw.columns for c in required):
         return pd.DataFrame()
 
     raw["competition"] = league_name
-    raw["season"]      = "2024"
+
+    # Extraer temporada del URL: .../2526/E0.csv -> "2025"
+    _m = re.search(r"/(\d{2})(\d{2})/", url)
+    raw["season"] = str(2000 + int(_m.group(1))) if _m else "2024"
+
     raw["date"]        = pd.to_datetime(raw["date"], dayfirst=True, errors="coerce")
-    raw               = raw.dropna(subset=["date", "home_goals", "away_goals"])
+    raw                = raw.dropna(subset=["date", "home_goals", "away_goals"])
     raw["home_goals"]  = raw["home_goals"].astype(int)
     raw["away_goals"]  = raw["away_goals"].astype(int)
     raw["total_goals"] = raw["home_goals"] + raw["away_goals"]

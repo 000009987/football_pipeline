@@ -40,7 +40,7 @@ EXTRA_LEAGUES_CSV = {
     "DED_2324": "https://www.football-data.co.uk/mmz4281/2324/N1.csv",
     "PPL_2324": "https://www.football-data.co.uk/mmz4281/2324/P1.csv",
 
-    "Eliteserien": "https://www.football-data.co.uk/mmz4281/2526/N1.csv",
+
 }
 
 SEASONS        = ["2024", "2025"]
