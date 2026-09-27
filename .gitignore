@@ -23,6 +23,7 @@ logs/
 
 # Datos descargados y generados por el pipeline
 data/raw/*.json
+data/raw/*.csv
 data/processed/
 data/output/
 reports/
