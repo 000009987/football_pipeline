@@ -1,6 +1,28 @@
-venv/ 
-__pycache__/ 
-*.pyc 
-.env 
-.vscode/ 
-*.log 
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# Caché de Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+
+# Variables de entorno y secretos
+.env
+.env.local
+
+# Configuración del editor
+.vscode/
+
+# Logs
+*.log
+logs/
+
+# Datos descargados y generados por el pipeline
+data/raw/*.json
+data/processed/
+data/output/
+reports/
