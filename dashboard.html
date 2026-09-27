@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Football Betting Pipeline — Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #21262d;
+    --border: rgba(255,255,255,0.08); --border2: rgba(255,255,255,0.15);
+    --text: #e6edf3; --text2: #8b949e; --text3: #484f58;
+    --green: #3fb950; --green-bg: rgba(63,185,80,0.12);
+    --amber: #d29922; --amber-bg: rgba(210,153,34,0.12);
+    --red: #f85149; --red-bg: rgba(248,81,73,0.12);
+    --blue: #58a6ff; --blue-bg: rgba(88,166,255,0.12);
+    --purple: #bc8cff; --purple-bg: rgba(188,140,255,0.12);
+    --accent: #238636;
+    font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-size: 13px; line-height: 1.6; }
+
+  .header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 16px 24px;
+    display: flex; align-items: center; justify-content: space-between; }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 28px; height: 28px; background: var(--accent); border-radius: 6px;
+    display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .logo-text { font-size: 14px; font-weight: 600; color: var(--text); letter-spacing: -0.3px; }
+  .logo-sub { font-size: 11px; color: var(--text2); }
+  .badge { background: var(--green-bg); color: var(--green); border: 1px solid rgba(63,185,80,0.3);
+    padding: 3px 8px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 20px 24px; }
+
+  .tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 20px; }
+  .tab { padding: 8px 16px; cursor: pointer; color: var(--text2); border-bottom: 2px solid transparent;
+    transition: all 0.15s; font-size: 12px; font-weight: 500; letter-spacing: 0.3px; }
+  .tab.active { color: var(--text); border-bottom-color: var(--blue); }
+  .tab:hover { color: var(--text); }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  /* Input grid */
+  .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .input-full { grid-column: 1 / -1; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; }
+  .field input, .field select {
+    background: var(--bg3); border: 1px solid var(--border2); color: var(--text);
+    padding: 8px 10px; border-radius: 6px; font-size: 13px; font-family: inherit;
+    transition: border-color 0.15s; }
+  .field input:focus, .field select:focus { outline: none; border-color: var(--blue); }
+
+  .odds-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .odds-label { font-size: 10px; color: var(--text3); margin-bottom: 3px; text-transform: uppercase; }
+
+  .btn { background: var(--accent); color: #fff; border: none; padding: 9px 18px;
+    border-radius: 6px; cursor: pointer; font-size: 13px; font-family: inherit;
+    font-weight: 600; transition: opacity 0.15s; }
+  .btn:hover { opacity: 0.85; }
+  .btn-secondary { background: var(--bg3); border: 1px solid var(--border2); color: var(--text); }
+
+  /* Results */
+  .results-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+  .metric { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px; }
+  .metric-label { font-size: 10px; color: var(--text2); text-transform: uppercase;
+    letter-spacing: 0.5px; margin-bottom: 4px; }
+  .metric-value { font-size: 22px; font-weight: 700; }
+  .metric-sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+  .m-home { color: var(--blue); }
+  .m-draw { color: var(--amber); }
+  .m-away { color: var(--purple); }
+
+  /* Probability bar */
+  .prob-bar { background: var(--bg3); border-radius: 4px; height: 8px; overflow: hidden;
+    display: flex; margin: 8px 0; }
+  .pb-home { background: var(--blue); height: 100%; transition: width 0.4s; }
+  .pb-draw { background: var(--amber); height: 100%; transition: width 0.4s; }
+  .pb-away { background: var(--purple); height: 100%; transition: width 0.4s; }
+  .prob-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text2); }
+
+  /* Market table */
+  .section-title { font-size: 11px; color: var(--text2); text-transform: uppercase;
+    letter-spacing: 0.5px; margin: 16px 0 8px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border); }
+  .market-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .market-cell { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px 10px; display: flex; justify-content: space-between; align-items: center; }
+  .market-name { color: var(--text2); font-size: 11px; }
+  .market-pct { font-size: 13px; font-weight: 600; }
+
+  /* Value bets */
+  .vbet-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 14px; margin-bottom: 10px; display: flex; align-items: center; gap: 12px; }
+  .vbet-card.strong { border-color: rgba(63,185,80,0.4); background: rgba(63,185,80,0.04); }
+  .vbet-card.good { border-color: rgba(88,166,255,0.3); background: rgba(88,166,255,0.03); }
+  .vbet-badge { padding: 3px 8px; border-radius: 4px; font-size: 10px; font-weight: 700;
+    min-width: 60px; text-align: center; }
+  .badge-strong { background: var(--green-bg); color: var(--green); }
+  .badge-good { background: var(--blue-bg); color: var(--blue); }
+  .badge-mod { background: var(--amber-bg); color: var(--amber); }
+  .vbet-info { flex: 1; }
+  .vbet-type { font-size: 12px; font-weight: 600; }
+  .vbet-detail { font-size: 11px; color: var(--text2); }
+  .vbet-stats { text-align: right; }
+  .ev-big { font-size: 16px; font-weight: 700; color: var(--green); }
+  .kelly-small { font-size: 11px; color: var(--text2); }
+
+  /* Score matrix */
+  .matrix-wrap { overflow-x: auto; }
+  .matrix { border-collapse: collapse; font-size: 11px; }
+  .matrix th { background: var(--bg3); color: var(--text2); padding: 5px 8px;
+    text-align: center; font-weight: 600; }
+  .matrix td { padding: 4px 8px; text-align: center; border: 1px solid var(--border);
+    color: var(--text); transition: background 0.2s; }
+
+  /* CLI box */
+  .cli-box { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px 18px; font-family: 'SF Mono', monospace; font-size: 12px; line-height: 2; }
+  .cli-comment { color: var(--text3); }
+  .cli-cmd { color: var(--green); }
+  .cli-arg { color: var(--blue); }
+  .cli-val { color: var(--amber); }
+
+  .no-results { color: var(--text2); text-align: center; padding: 30px; font-size: 12px; }
+
+  .separator { height: 1px; background: var(--border); margin: 16px 0; }
+
+  /* Exact scores */
+  .scores-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+  .score-cell { background: var(--bg3); border: 1px solid var(--border); border-radius: 4px;
+    padding: 5px; text-align: center; }
+  .score-result { font-size: 12px; font-weight: 600; }
+  .score-pct { font-size: 10px; color: var(--text2); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <div class="logo-icon">⚽</div>
+    <div>
+      <div class="logo-text">Football Betting Pipeline</div>
+      <div class="logo-sub">Dixon-Coles + Poisson Model</div>
+    </div>
+  </div>
+  <span class="badge" id="status-badge">LISTO</span>
+</div>
+
+<div class="container">
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('analyzer')">Analizador</div>
+    <div class="tab" onclick="switchTab('value')">Value Bets</div>
+    <div class="tab" onclick="switchTab('matrix')">Matriz</div>
+    <div class="tab" onclick="switchTab('cli')">Comandos CLI</div>
+  </div>
+
+  <!-- TAB: Analizador -->
+  <div class="panel active" id="panel-analyzer">
+    <div class="input-grid">
+      <div class="field">
+        <label>Equipo Local (λH estimado)</label>
+        <input type="number" id="lh" value="1.65" min="0.1" max="5" step="0.05">
+      </div>
+      <div class="field">
+        <label>Equipo Visitante (λA estimado)</label>
+        <input type="number" id="la" value="1.10" min="0.1" max="5" step="0.05">
+      </div>
+      <div class="field">
+        <label>Nombre equipo local</label>
+        <input type="text" id="home-name" value="Arsenal" placeholder="Ej: Arsenal">
+      </div>
+      <div class="field">
+        <label>Nombre equipo visitante</label>
+        <input type="text" id="away-name" value="Chelsea" placeholder="Ej: Chelsea">
+      </div>
+      <div class="field">
+        <label>Liga / Competición</label>
+        <input type="text" id="comp-name" value="Premier League" placeholder="Premier League">
+      </div>
+      <div class="field">
+        <label>Modelo</label>
+        <select id="model-select">
+          <option value="dc">Dixon-Coles (recomendado)</option>
+          <option value="poisson">Poisson estándar</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>rho (Dixon-Coles, típico: -0.13)</label>
+        <input type="number" id="rho" value="-0.13" min="-0.5" max="0" step="0.01">
+      </div>
+      <div class="field" style="justify-content: flex-end;">
+        <button class="btn" onclick="analyze()">Calcular predicción →</button>
+      </div>
+    </div>
+
+    <div id="results-area" style="display:none;">
+      <div class="results-grid">
+        <div class="metric">
+          <div class="metric-label">Victoria local</div>
+          <div class="metric-value m-home" id="r-home">—</div>
+          <div class="metric-sub" id="r-home-name">—</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Empate</div>
+          <div class="metric-value m-draw" id="r-draw">—</div>
+          <div class="metric-sub">Ambos igualan</div>
+        </div>
+        <div class="metric">
+          <div class="metric-label">Victoria visitante</div>
+          <div class="metric-value m-away" id="r-away">—</div>
+          <div class="metric-sub" id="r-away-name">—</div>
+        </div>
+      </div>
+
+      <div class="prob-bar">
+        <div class="pb-home" id="bar-home" style="width:40%"></div>
+        <div class="pb-draw" id="bar-draw" style="width:28%"></div>
+        <div class="pb-away" id="bar-away" style="width:32%"></div>
+      </div>
+      <div class="prob-labels">
+        <span id="bl-home">Local</span><span id="bl-draw">Empate</span><span id="bl-away">Visita</span>
+      </div>
+
+      <div class="section-title">Over / Under</div>
+      <div class="market-grid" id="ou-grid"></div>
+
+      <div class="section-title">Otros mercados</div>
+      <div class="market-grid" id="other-grid"></div>
+
+      <div class="section-title">Marcadores más probables</div>
+      <div class="scores-grid" id="scores-grid"></div>
+    </div>
+  </div>
+
+  <!-- TAB: Value Bets -->
+  <div class="panel" id="panel-value">
+    <div class="input-grid">
+      <div class="field">
+        <label>λH (xG local)</label>
+        <input type="number" id="v-lh" value="1.65" min="0.1" max="5" step="0.05">
+      </div>
+      <div class="field">
+        <label>λA (xG visitante)</label>
+        <input type="number" id="v-la" value="1.10" min="0.1" max="5" step="0.05">
+      </div>
+      <div class="input-full">
+        <div class="section-title">Cuotas de la casa de apuestas (dejar en 0 para ignorar)</div>
+        <div class="odds-grid">
+          <div class="field"><div class="odds-label">1 (Local)</div>
+            <input type="number" id="o-1" value="2.10" min="1" step="0.05"></div>
+          <div class="field"><div class="odds-label">X (Empate)</div>
+            <input type="number" id="o-X" value="3.40" min="1" step="0.05"></div>
+          <div class="field"><div class="odds-label">2 (Visita)</div>
+            <input type="number" id="o-2" value="3.60" min="1" step="0.05"></div>
+          <div class="field"><div class="odds-label">O2.5</div>
+            <input type="number" id="o-O25" value="1.85" min="1" step="0.05"></div>
+          <div class="field"><div class="odds-label">U2.5</div>
+            <input type="number" id="o-U25" value="1.95" min="1" step="0.05"></div>
+          <div class="field"><div class="odds-label">O1.5</div>
+            <input type="number" id="o-O15" value="1.35" min="1" step="0.05"></div>
+          <div class="field"><div class="odds-label">U1.5</div>
+            <input type="number" id="o-U15" value="3.20" min="1" step="0.05"></div>
+          <div class="field"><div class="odds-label">BTTS Sí</div>
+            <input type="number" id="o-BTTSY" value="1.75" min="1" step="0.05"></div>
+          <div class="field"><div class="odds-label">BTTS No</div>
+            <input type="number" id="o-BTTSN" value="2.00" min="1" step="0.05"></div>
+          <div class="field"><div class="odds-label">O3.5</div>
+            <input type="number" id="o-O35" value="3.10" min="1" step="0.05"></div>
+          <div class="field"><div class="odds-label">U3.5</div>
+            <input type="number" id="o-U35" value="1.28" min="1" step="0.05"></div>
+          <div class="field"><div class="odds-label">EV mín (%)</div>
+            <input type="number" id="min-ev" value="3" min="0" max="30" step="0.5"></div>
+        </div>
+      </div>
+      <div class="field input-full" style="flex-direction: row; align-items: flex-end; justify-content: flex-end;">
+        <button class="btn" onclick="findValueBets()">Detectar value bets →</button>
+      </div>
+    </div>
+
+    <div id="vbets-area"></div>
+  </div>
+
+  <!-- TAB: Matriz de resultados -->
+  <div class="panel" id="panel-matrix">
+    <div class="input-grid" style="grid-template-columns: 1fr 1fr 1fr;">
+      <div class="field">
+        <label>λH</label>
+        <input type="number" id="m-lh" value="1.65" min="0.1" max="5" step="0.05">
+      </div>
+      <div class="field">
+        <label>λA</label>
+        <input type="number" id="m-la" value="1.10" min="0.1" max="5" step="0.05">
+      </div>
+      <div class="field" style="justify-content: flex-end;">
+        <button class="btn" onclick="buildMatrix()">Generar matriz →</button>
+      </div>
+    </div>
+    <div class="matrix-wrap">
+      <table class="matrix" id="score-matrix"></table>
+    </div>
+  </div>
+
+  <!-- TAB: CLI -->
+  <div class="panel" id="panel-cli">
+    <div class="cli-box">
+      <div class="cli-comment"># Instalar dependencias</div>
+      <div><span class="cli-cmd">pip install</span> <span class="cli-val">-r requirements.txt</span></div>
+      <br>
+      <div class="cli-comment"># 1. Descargar datos históricos (primera vez ~5-10min)</div>
+      <div><span class="cli-cmd">python main.py</span> <span class="cli-arg">--mode</span> <span class="cli-val">download</span></div>
+      <br>
+      <div class="cli-comment"># 2. Analizar próximos 7 días de todos las ligas</div>
+      <div><span class="cli-cmd">python main.py</span> <span class="cli-arg">--mode</span> <span class="cli-val">analyze</span></div>
+      <br>
+      <div class="cli-comment"># 3. Analizar próximos 3 días</div>
+      <div><span class="cli-cmd">python main.py</span> <span class="cli-arg">--mode</span> <span class="cli-val">analyze</span> <span class="cli-arg">--days</span> <span class="cli-val">3</span></div>
+      <br>
+      <div class="cli-comment"># 4. Partido específico con cuotas manuales</div>
+      <div><span class="cli-cmd">python main.py</span> <span class="cli-arg">--mode</span> <span class="cli-val">single</span> \</div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cli-arg">--home</span> <span class="cli-val">"Arsenal"</span> <span class="cli-arg">--away</span> <span class="cli-val">"Chelsea"</span> \</div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cli-arg">--comp</span> <span class="cli-val">"PL"</span> \</div>
+      <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cli-arg">--odds</span> <span class="cli-val">"1:2.10,X:3.40,2:3.60,O2.5:1.85,BTTS_Y:1.75"</span></div>
+      <br>
+      <div class="cli-comment"># 5. Backtest en Premier League</div>
+      <div><span class="cli-cmd">python main.py</span> <span class="cli-arg">--mode</span> <span class="cli-val">backtest</span> <span class="cli-arg">--comp</span> <span class="cli-val">PL</span></div>
+      <br>
+      <div class="cli-comment"># 6. Forzar recarga de datos históricos</div>
+      <div><span class="cli-cmd">python main.py</span> <span class="cli-arg">--mode</span> <span class="cli-val">download</span> <span class="cli-arg">--reload</span></div>
+    </div>
+
+    <div class="separator"></div>
+
+    <div class="section-title">API Keys requeridas</div>
+    <div class="cli-box">
+      <div class="cli-comment"># Editar config.py:</div>
+      <div><span class="cli-val">API_KEY = "TU_API_KEY_AQUI"</span></div>
+      <br>
+      <div class="cli-comment"># Registro GRATIS en:</div>
+      <div><span class="cli-cmd">https://www.football-data.org/client/register</span></div>
+      <div class="cli-comment"># Plan Free: 10 req/min · todas las ligas top · histórico 5 años</div>
+    </div>
+  </div>
+</div>
+
+<script>
+function switchTab(id) {
+  document.querySelectorAll('.tab').forEach((t,i) => {
+    t.classList.toggle('active', ['analyzer','value','matrix','cli'][i] === id);
+  });
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+}
+
+// ── Poisson PMF ──────────────────────────────────────────────────────────────
+function poissonPMF(k, lambda) {
+  if (lambda <= 0) return k === 0 ? 1 : 0;
+  let logP = k * Math.log(lambda) - lambda;
+  for (let i = 2; i <= k; i++) logP -= Math.log(i);
+  return Math.exp(logP);
+}
+
+function tau(x, y, lh, la, rho) {
+  if (x===0 && y===0) return 1 - lh*la*rho;
+  if (x===1 && y===0) return 1 + la*rho;
+  if (x===0 && y===1) return 1 + lh*rho;
+  if (x===1 && y===1) return 1 - rho;
+  return 1.0;
+}
+
+function scoreMatrix(lh, la, rho, model, MAX=7) {
+  const n = MAX + 1;
+  let mat = Array.from({length: n}, (_,i) =>
+    Array.from({length: n}, (_,j) => poissonPMF(i,lh) * poissonPMF(j,la))
+  );
+  if (model === 'dc') {
+    for (let i=0; i<2; i++) for (let j=0; j<2; j++) {
+      const t = tau(i, j, lh, la, rho);
+      mat[i][j] *= Math.max(t, 1e-6);
+    }
+  }
+  const total = mat.flat().reduce((a,b) => a+b, 0);
+  return mat.map(row => row.map(v => v / total));
+}
+
+function computeMarkets(mat) {
+  const n = mat.length;
+  let ph=0, pd=0, pa=0, btts=0;
+  const ou = {};
+  [0.5,1.5,2.5,3.5,4.5].forEach(l => { ou['o'+l]=0; ou['u'+l]=0; });
+  const scores = [];
+
+  for (let i=0; i<n; i++) for (let j=0; j<n; j++) {
+    const p = mat[i][j];
+    if (i > j) ph += p;
+    else if (i === j) pd += p;
+    else pa += p;
+    const tot = i + j;
+    [0.5,1.5,2.5,3.5,4.5].forEach(l => {
+      if (tot > l) ou['o'+l] += p;
+      else ou['u'+l] += p;
+    });
+    if (i >= 1 && j >= 1) btts += p;
+    scores.push({score: `${i}-${j}`, p});
+  }
+  scores.sort((a,b) => b.p - a.p);
+  return { ph, pd, pa, ou, btts, scores: scores.slice(0,10) };
+}
+
+function pct(v) { return (v*100).toFixed(1) + '%'; }
+function impliedProb(o) { return 1 / Math.max(o, 1.001); }
+function ev(p, o) { return p * o - 1; }
+function kelly(p, o, f=0.25) {
+  const b = o - 1, q = 1 - p;
+  return Math.max((b*p - q) / b, 0) * f;
+}
+
+// ── Analyze ──────────────────────────────────────────────────────────────────
+function analyze() {
+  const lh = parseFloat(document.getElementById('lh').value);
+  const la = parseFloat(document.getElementById('la').value);
+  const rho = parseFloat(document.getElementById('rho').value);
+  const model = document.getElementById('model-select').value;
+  const hn = document.getElementById('home-name').value || 'Local';
+  const an = document.getElementById('away-name').value || 'Visita';
+
+  const mat = scoreMatrix(lh, la, rho, model);
+  const m = computeMarkets(mat);
+
+  document.getElementById('results-area').style.display = 'block';
+  document.getElementById('r-home').textContent = pct(m.ph);
+  document.getElementById('r-draw').textContent = pct(m.pd);
+  document.getElementById('r-away').textContent = pct(m.pa);
+  document.getElementById('r-home-name').textContent = hn;
+  document.getElementById('r-away-name').textContent = an;
+  document.getElementById('bl-home').textContent = hn;
+  document.getElementById('bl-away').textContent = an;
+
+  document.getElementById('bar-home').style.width = pct(m.ph);
+  document.getElementById('bar-draw').style.width = pct(m.pd);
+  document.getElementById('bar-away').style.width = pct(m.pa);
+
+  const ouGrid = document.getElementById('ou-grid');
+  ouGrid.innerHTML = ['0.5','1.5','2.5','3.5'].map(l => `
+    <div class="market-cell">
+      <span class="market-name">Over ${l}</span>
+      <span class="market-pct" style="color:var(--blue)">${pct(m.ou['o'+l])}</span>
+    </div>
+    <div class="market-cell">
+      <span class="market-name">Under ${l}</span>
+      <span class="market-pct" style="color:var(--text2)">${pct(m.ou['u'+l])}</span>
+    </div>
+  `).join('');
+
+  document.getElementById('other-grid').innerHTML = `
+    <div class="market-cell">
+      <span class="market-name">BTTS Sí</span>
+      <span class="market-pct" style="color:var(--green)">${pct(m.btts)}</span>
+    </div>
+    <div class="market-cell">
+      <span class="market-name">BTTS No</span>
+      <span class="market-pct" style="color:var(--text2)">${pct(1-m.btts)}</span>
+    </div>
+    <div class="market-cell">
+      <span class="market-name">λ Local</span>
+      <span class="market-pct" style="color:var(--blue)">${lh.toFixed(2)}</span>
+    </div>
+    <div class="market-cell">
+      <span class="market-name">λ Visita</span>
+      <span class="market-pct" style="color:var(--purple)">${la.toFixed(2)}</span>
+    </div>
+  `;
+
+  document.getElementById('scores-grid').innerHTML = m.scores.map(s => `
+    <div class="score-cell">
+      <div class="score-result">${s.score}</div>
+      <div class="score-pct">${pct(s.p)}</div>
+    </div>
+  `).join('');
+}
+
+// ── Value Bets ────────────────────────────────────────────────────────────────
+function findValueBets() {
+  const lh = parseFloat(document.getElementById('v-lh').value);
+  const la = parseFloat(document.getElementById('v-la').value);
+  const minEV = parseFloat(document.getElementById('min-ev').value) / 100;
+
+  const mat = scoreMatrix(lh, la, -0.13, 'dc');
+  const m = computeMarkets(mat);
+
+  const betsMap = {
+    '1':     { name: 'Victoria Local',     prob: m.ph,           id: 'o-1' },
+    'X':     { name: 'Empate',             prob: m.pd,           id: 'o-X' },
+    '2':     { name: 'Victoria Visita',    prob: m.pa,           id: 'o-2' },
+    'O2.5':  { name: 'Over 2.5',          prob: m.ou['o2.5'],   id: 'o-O25' },
+    'U2.5':  { name: 'Under 2.5',         prob: m.ou['u2.5'],   id: 'o-U25' },
+    'O1.5':  { name: 'Over 1.5',          prob: m.ou['o1.5'],   id: 'o-O15' },
+    'U1.5':  { name: 'Under 1.5',         prob: m.ou['u1.5'],   id: 'o-U15' },
+    'BTTS_Y':{ name: 'BTTS Sí',           prob: m.btts,         id: 'o-BTTSY' },
+    'BTTS_N':{ name: 'BTTS No',           prob: 1 - m.btts,     id: 'o-BTTSN' },
+    'O3.5':  { name: 'Over 3.5',          prob: m.ou['o3.5'],   id: 'o-O35' },
+    'U3.5':  { name: 'Under 3.5',         prob: m.ou['u3.5'],   id: 'o-U35' },
+  };
+
+  const found = [];
+  for (const [key, info] of Object.entries(betsMap)) {
+    const el = document.getElementById(info.id);
+    if (!el) continue;
+    const odds = parseFloat(el.value);
+    if (!odds || odds < 1.1) continue;
+    const evVal = ev(info.prob, odds);
+    const edge = info.prob - impliedProb(odds);
+    if (evVal >= minEV && info.prob >= 0.08 && odds >= 1.2 && odds <= 10) {
+      found.push({
+        key, name: info.name, prob: info.prob,
+        impl: impliedProb(odds), odds, evVal, edge,
+        k: kelly(info.prob, odds),
+        rating: evVal >= 0.10 ? 'FUERTE' : evVal >= 0.06 ? 'BUENA' : 'MODERADA'
+      });
+    }
+  }
+  found.sort((a,b) => b.evVal - a.evVal);
+
+  const area = document.getElementById('vbets-area');
+  if (!found.length) {
+    area.innerHTML = '<div class="no-results">Sin value bets con EV ≥ ' + (minEV*100).toFixed(1) + '% en los mercados ingresados.</div>';
+    return;
+  }
+
+  area.innerHTML = `<div style="color:var(--text2);font-size:11px;margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px">${found.length} value bet${found.length>1?'s':''} encontrada${found.length>1?'s':''}</div>` +
+    found.map(b => {
+      const cls = b.rating==='FUERTE' ? 'strong' : b.rating==='BUENA' ? 'good' : '';
+      const badgeCls = b.rating==='FUERTE' ? 'badge-strong' : b.rating==='BUENA' ? 'badge-good' : 'badge-mod';
+      return `<div class="vbet-card ${cls}">
+        <span class="vbet-badge ${badgeCls}">${b.rating}</span>
+        <div class="vbet-info">
+          <div class="vbet-type">${b.name} @ ${b.odds.toFixed(2)}</div>
+          <div class="vbet-detail">Modelo ${pct(b.prob)} · Implícita ${pct(b.impl)} · Edge ${(b.edge*100).toFixed(1)}pp</div>
+        </div>
+        <div class="vbet-stats">
+          <div class="ev-big">+${(b.evVal*100).toFixed(1)}%</div>
+          <div class="kelly-small">Kelly: ${pct(b.k)}/bankroll</div>
+        </div>
+      </div>`;
+    }).join('');
+}
+
+// ── Score Matrix ──────────────────────────────────────────────────────────────
+function buildMatrix() {
+  const lh = parseFloat(document.getElementById('m-lh').value);
+  const la = parseFloat(document.getElementById('m-la').value);
+  const mat = scoreMatrix(lh, la, -0.13, 'dc', 6);
+  const n = mat.length;
+
+  const maxP = Math.max(...mat.flat());
+  let html = '<thead><tr><th>G\\G</th>';
+  for (let j=0; j<n; j++) html += `<th style="color:var(--purple)">${j}</th>`;
+  html += '</tr></thead><tbody>';
+
+  for (let i=0; i<n; i++) {
+    html += `<tr><th style="color:var(--blue)">${i}</th>`;
+    for (let j=0; j<n; j++) {
+      const p = mat[i][j];
+      const intensity = Math.round((p / maxP) * 40);
+      const bg = i===j ? `rgba(210,153,34,${p/maxP*0.5})` :
+                 i>j   ? `rgba(88,166,255,${p/maxP*0.4})` :
+                          `rgba(188,140,255,${p/maxP*0.4})`;
+      html += `<td style="background:${bg}">${pct(p)}</td>`;
+    }
+    html += '</tr>';
+  }
+  html += '</tbody>';
+  document.getElementById('score-matrix').innerHTML = html;
+}
+
+// Init
+analyze();
+buildMatrix();
+</script>
+</body>
+</html>
