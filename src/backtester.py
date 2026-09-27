@@ -80,7 +80,7 @@ def run_backtest(df_history: pd.DataFrame,
 
     for _, row in df_test.iterrows():
         try:
-            features = enrich_fixture(row, df_train)
+            features = enrich_fixture(row, df_train, as_of_date=row["date"])
             pred_dc  = predict_match(
                 features["lambda_home"], features["lambda_away"],
                 rho=rho, model="dixon_coles"

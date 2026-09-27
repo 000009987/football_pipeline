@@ -338,12 +338,12 @@ def compute_ratings_for_team(team: str, df: pd.DataFrame,
     }
 
 
-def enrich_fixture(fixture_row: pd.Series, df_history: pd.DataFrame) -> dict:
+def enrich_fixture(fixture_row: pd.Series, df_history: pd.DataFrame, as_of_date=None) -> dict:
     ht = normalize_team_name(fixture_row["home_team"])
     at = normalize_team_name(fixture_row["away_team"])
 
-    hr = compute_ratings_for_team(ht, df_history)
-    ar = compute_ratings_for_team(at, df_history)
+    hr = compute_ratings_for_team(ht, df_history, as_of_date=as_of_date)
+    ar = compute_ratings_for_team(at, df_history, as_of_date=as_of_date)
 
     n_home_total = hr["n_home"] + hr["n_away"]
     n_away_total = ar["n_home"] + ar["n_away"]
