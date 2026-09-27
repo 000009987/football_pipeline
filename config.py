@@ -48,11 +48,37 @@ RECENT_MATCHES = 10
 DECAY_FACTOR   = 0.0025
 HOME_ADVANTAGE = 1.12
 
-MIN_EV          = 0.05
-MAX_EV          = 0.10
-MIN_PROB_MODEL  = 0.15
-MIN_ODDS        = 2.50
-MAX_ODDS        = 8.00
+
+
+# ── Filtros de apuestas ────────────────────────────────────────────────────────
+# Perfil CONSERVADOR: sin overfitting, baseline honesto para validación
+FILTERS_CONSERVATIVE = {
+    "MIN_EV":         0.08,
+    "MAX_EV":         99.0,
+    "MIN_PROB_MODEL": 0.10,
+    "MIN_ODDS":       1.50,
+    "MAX_ODDS":       8.00,
+}
+
+# Perfil PL-OPTIMIZADO: ajustado sobre PL 2025-26, overfitting conocido
+FILTERS_PL_TUNED = {
+    "MIN_EV":         0.05,
+    "MAX_EV":         0.10,
+    "MIN_PROB_MODEL": 0.15,
+    "MIN_ODDS":       2.50,
+    "MAX_ODDS":       8.00,
+}
+
+# ── Perfil activo ──────────────────────────────────────────────────────────────
+# Cambiar aquí para alternar entre perfiles sin tocar el resto del código
+ACTIVE_FILTERS = FILTERS_CONSERVATIVE
+
+# Constantes exportadas (el backtester las lee)
+MIN_EV         = ACTIVE_FILTERS["MIN_EV"]
+MAX_EV         = ACTIVE_FILTERS["MAX_EV"]
+MIN_PROB_MODEL = ACTIVE_FILTERS["MIN_PROB_MODEL"]
+MIN_ODDS       = ACTIVE_FILTERS["MIN_ODDS"]
+MAX_ODDS       = ACTIVE_FILTERS["MAX_ODDS"]
 
 OUTPUT_CSV  = "output/value_bets.csv"
 OUTPUT_HTML = "output/dashboard.html"
