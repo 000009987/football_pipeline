@@ -48,9 +48,10 @@ RECENT_MATCHES = 10
 DECAY_FACTOR   = 0.0025
 HOME_ADVANTAGE = 1.12
 
-MIN_EV          = 0.08
-MIN_PROB_MODEL  = 0.10
-MIN_ODDS        = 1.30
+MIN_EV          = 0.05
+MAX_EV          = 0.10
+MIN_PROB_MODEL  = 0.15
+MIN_ODDS        = 2.50
 MAX_ODDS        = 8.00
 
 OUTPUT_CSV  = "output/value_bets.csv"

@@ -6,7 +6,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from src.feature_engineering import enrich_fixture
 from src.models import predict_match
-from config import MIN_EV
+from config import MIN_EV, MAX_EV, MIN_PROB_MODEL, MIN_ODDS, MAX_ODDS
 
 
 def _result_label(hg: int, ag: int) -> str:
@@ -45,7 +45,6 @@ def run_backtest(df_history: pd.DataFrame,
 
     for h, d, a in candidates:
         if h in df.columns and d in df.columns and a in df.columns:
-            # Verificar que tenga valores reales
             test_vals = df[[h, d, a]].dropna()
             if verbose:
                 print(f"  Probando {h}/{d}/{a}: {len(test_vals)} filas con datos")
@@ -121,15 +120,16 @@ def run_backtest(df_history: pd.DataFrame,
                     ("A", pred_dc["prob_away"], oa),
                 ]:
                     ev = prob * odds_val - 1
+                    rango_ok = MIN_ODDS <= odds_val <= MAX_ODDS
+                    prob_ok  = prob >= MIN_PROB_MODEL
+                    ev_ok    = MIN_EV < ev <= MAX_EV
                     if verbose and debug_first:
                         print(f"  DEBUG apuesta {outcome}: prob={prob:.3f} "
                               f"odds={odds_val} EV={ev:+.3f} "
-                              f"rango_ok={1.30<=odds_val<=8.00} "
-                              f"prob_ok={prob>=0.10} "
-                              f"ev_ok={ev>MIN_EV}")
-                    if (ev > best_ev
-                            and 1.30 <= odds_val <= 8.00
-                            and prob >= 0.10):
+                              f"rango_ok={rango_ok} "
+                              f"prob_ok={prob_ok} "
+                              f"ev_ok={ev_ok}")
+                    if ev > best_ev and rango_ok and prob_ok and ev_ok:
                         best_ev  = ev
                         best_bet = (outcome, prob, odds_val)
 
