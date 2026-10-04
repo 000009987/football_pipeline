@@ -188,6 +188,43 @@ TEAM_NAME_MAP = {
     "Casa Pia":             "Casa Pia AC",
     "Chaves":               "GD Chaves",
     "Estrela":              "CF Estrela da Amadora",
+    
+           # ── Alias Understat (Bundesliga) ──
+    # Overrides (dict literal: la última entrada gana)
+    "Bochum":                   "Bochum",
+    "Borussia Dortmund":        "Borussia Dortmund",
+    "Darmstadt":                "Darmstadt",
+    "Eintracht Frankfurt":      "Eintracht Frankfurt",
+    "Hamburger SV":             "Hamburger SV",
+    "Holstein Kiel":            "Holstein Kiel",
+    "VfB Stuttgart":            "VfB Stuttgart",
+    # Alias específicos Understat
+    "Augsburg":                 "FC Augsburg",
+    "Bayer Leverkusen":         "Leverkusen",
+    "Bayern Munich":            "FC Bayern München",
+    "Borussia M.Gladbach":      "Borussia Mönchengladbach",
+    "FC Cologne":               "FC Koln",
+    "FC Heidenheim":            "1. FC Heidenheim 1846",
+    "Freiburg":                 "SC Freiburg",
+    "Hoffenheim":               "TSG 1899 Hoffenheim",
+    "Mainz 05":                 "1. FSV Mainz 05",
+    "RasenBallsport Leipzig":   "RB Leipzig",
+    "St. Pauli":                "FC St. Pauli 1910",
+    "Union Berlin":             "1. FC Union Berlin",
+    "Werder Bremen":            "SV Werder Bremen",
+    "Wolfsburg":                "VfL Wolfsburg",
+
+    # ── Alias Understat (Ligue 1) ──
+    "Clermont Foot":            "Clermont Foot 63",
+    "Paris Saint Germain":      "Paris Saint-Germain FC",
+    "Saint-Etienne":            "AS Saint-Étienne",
+
+    # ── Alias Understat (La Liga) ──
+    "Celta Vigo":               "RC Celta de Vigo",
+    "Rayo Vallecano":           "Vallecano",
+    "Real Betis":               "Real Betis Balompié",
+    "Real Oviedo":              "Oviedo",
+    "Real Valladolid":          "Real Valladolid CF",
 }
 
 
