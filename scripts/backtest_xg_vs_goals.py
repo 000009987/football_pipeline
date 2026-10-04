@@ -1,6 +1,7 @@
 """
-Backtest walk-forward PL con/sin corrección Dixon-Coles.
+Backtest walk-forward multi-liga con/sin corrección Dixon-Coles.
 Prueba múltiples valores de rho para encontrar el óptimo.
+Modos: goals, xg, blend.
 """
 import sys
 from pathlib import Path
@@ -16,6 +17,7 @@ from config import HOME_ADVANTAGE  # noqa: E402
 HIST = Path("data/processed/history_with_xg.parquet")
 MAX_GOALS = 10
 TEST_SEASONS = [2024, 2025]
+COMPETITIONS = ["PL", "PD", "SA", "BL1", "FL1"]
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -109,37 +111,71 @@ def run_backtest(df, mode, rho=0.0):
     }
 
 
-def main():
-    df = pd.read_parquet(HIST)
-    df = df[df["competition"] == "PL"].copy()
+def run_league(df_all, comp, mode, rhos):
+    """Devuelve mejor log_loss y su rho para una liga y modo."""
+    df = df_all[df_all["competition"] == comp].copy()
+    if len(df) < 200:
+        return None
     df["date"] = pd.to_datetime(df["date"], utc=True).dt.tz_convert(None)
     df = df.sort_values("date").reset_index(drop=True)
 
-    df["home_blend"] = (df["home_goals"] + df["home_xg"]) / 2
-    df["away_blend"] = (df["away_goals"] + df["away_xg"]) / 2
-
-    test_n = df["season"].isin(TEST_SEASONS).sum()
-    print(f"PL total: {len(df)} | test: {test_n} partidos\n")
-
-    rhos = [0.0, -0.03, -0.05, -0.08, -0.10, -0.13, -0.15]
     results = []
-
-    for mode in ["goals", "xg", "blend"]:
-        print(f"── mode = {mode} ──")
-        for rho in rhos:
-            r = run_backtest(df, mode, rho=rho)
-            results.append(r)
-            print(f"  rho={rho:+.2f}  log_loss={r['log_loss']:.4f}  acc={r['accuracy']:.4f}")
-        print()
-
+    for rho in rhos:
+        r = run_backtest(df, mode, rho=rho)
+        results.append(r)
     res = pd.DataFrame(results)
-    print("=== MEJOR RHO POR MODO ===")
-    best = res.loc[res.groupby("mode")["log_loss"].idxmin()]
-    print(best.to_string(index=False))
+    best = res.loc[res["log_loss"].idxmin()]
+    return {
+        "competition": comp,
+        "mode": mode,
+        "best_rho": best["rho"],
+        "log_loss": best["log_loss"],
+        "accuracy": best["accuracy"],
+        "n_test": best["n"],
+    }
 
-    print("\n=== MEJOR GLOBAL ===")
-    print(res.loc[res["log_loss"].idxmin()].to_string())
-    print(f"\nReferencia mercado: log_loss ≈ 0.95-1.00")
+
+def main():
+    df_all = pd.read_parquet(HIST)
+    df_all["home_blend"] = (df_all["home_goals"] + df_all["home_xg"]) / 2
+    df_all["away_blend"] = (df_all["away_goals"] + df_all["away_xg"]) / 2
+
+    rhos = [0.0, -0.05, -0.10, -0.15, -0.18, -0.20, -0.22, -0.25, -0.30]
+
+    all_results = []
+    for comp in COMPETITIONS:
+        for mode in ["goals", "xg", "blend"]:
+            print(f"  {comp} / {mode} ...")
+            r = run_league(df_all, comp, mode, rhos)
+            if r:
+                all_results.append(r)
+
+    res = pd.DataFrame(all_results)
+    print()
+    print("=" * 70)
+    print("  MEJOR LOG-LOSS POR (LIGA, MODO)")
+    print("=" * 70)
+    pivot_ll = res.pivot(index="competition", columns="mode", values="log_loss")
+    print(pivot_ll.round(4).to_string())
+    print()
+    print("=" * 70)
+    print("  MEJOR RHO POR (LIGA, MODO)")
+    print("=" * 70)
+    pivot_rho = res.pivot(index="competition", columns="mode", values="best_rho")
+    print(pivot_rho.to_string())
+    print()
+    print("=" * 70)
+    print("  MEJOR ACCURACY POR (LIGA, MODO)")
+    print("=" * 70)
+    pivot_acc = res.pivot(index="competition", columns="mode", values="accuracy")
+    print(pivot_acc.round(4).to_string())
+    print()
+    print("=" * 70)
+    print("  RESUMEN: MEDIA DE LOG-LOSS POR MODO")
+    print("=" * 70)
+    print(res.groupby("mode")["log_loss"].agg(["mean", "min", "max"]).round(4).to_string())
+    print()
+    print(f"Referencia mercado: log_loss ≈ 0.95-1.00")
 
 
 if __name__ == "__main__":
