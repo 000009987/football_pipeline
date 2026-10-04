@@ -7,14 +7,20 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from src.xg_loader import merge_xg_with_history  # noqa: E402
 
-HIST = Path("data/processed/history.parquet")
-XG   = Path("data/raw/xg_PL.csv")
-OUT  = Path("data/processed/history_with_xg.parquet")
+HIST   = Path("data/processed/history.parquet")
+XG_DIR = Path("data/raw")
+OUT    = Path("data/processed/history_with_xg.parquet")
 
 
 def main():
     hist = pd.read_parquet(HIST)
-    xg   = pd.read_csv(XG)
+
+    xg_files = sorted(XG_DIR.glob("xg_*.csv"))
+    print(f"Cargando {len(xg_files)} ficheros xG: {[f.name for f in xg_files]}")
+    xg = pd.concat(
+        [pd.read_csv(f, parse_dates=["date"]) for f in xg_files],
+        ignore_index=True,
+    )
 
     print("history cols:", list(hist.columns))
     print("xg cols     :", list(xg.columns))
