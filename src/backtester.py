@@ -21,6 +21,8 @@ def run_backtest(df_history: pd.DataFrame,
                  kelly_frac: float = 0.10,
                  initial_bankroll: float = 1000.0,
                  odds_source_cols: tuple = None,
+                 col_home: str = "home_goals",
+                 col_away: str = "away_goals",
                  verbose: bool = True) -> dict:
 
     df = df_history.copy().sort_values("date").reset_index(drop=True)
@@ -79,7 +81,8 @@ def run_backtest(df_history: pd.DataFrame,
 
     for _, row in df_test.iterrows():
         try:
-            features = enrich_fixture(row, df_train, as_of_date=row["date"])
+            features = enrich_fixture(row, df_train, as_of_date=row["date"],
+                                       col_home=col_home, col_away=col_away)
             pred_dc  = predict_match(
                 features["lambda_home"], features["lambda_away"],
                 rho=rho, model="dixon_coles"
