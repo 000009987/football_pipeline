@@ -13,7 +13,9 @@ _*.py
 
 # Variables de entorno y secretos
 .env
+venv/
 .env.local
+.venv/
 
 # Configuración del editor
 .vscode/

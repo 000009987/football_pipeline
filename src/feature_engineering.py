@@ -14,32 +14,37 @@ from config import DECAY_FACTOR, RECENT_MATCHES, HOME_ADVANTAGE
 # ── Normalización de nombres de equipos ───────────────────────────────────────
 # Mapea nombres cortos de CSVs al nombre largo de la API
 TEAM_NAME_MAP = {
-    # Premier League
-    "Arsenal":              "Arsenal FC",
-    "Aston Villa":          "Aston Villa FC",
-    "Bournemouth":          "AFC Bournemouth",
-    "Brentford":            "Brentford FC",
-    "Brighton":             "Brighton & Hove Albion FC",
-    "Burnley":              "Burnley FC",
-    "Chelsea":              "Chelsea FC",
-    "Crystal Palace":       "Crystal Palace FC",
-    "Everton":              "Everton FC",
-    "Fulham":               "Fulham FC",
-    "Ipswich":              "Ipswich Town FC",
-    "Leeds":                "Leeds United FC",
-    "Leicester":            "Leicester City FC",
-    "Liverpool":            "Liverpool FC",
-    "Man City":             "Manchester City FC",
-    "Man United":           "Manchester United FC",
-    "Newcastle":            "Newcastle United FC",
-    "Nott'm Forest":        "Nottingham Forest FC",
-    "Southampton":          "Southampton FC",
-    "Sunderland":           "Sunderland AFC",
-    "Tottenham":            "Tottenham Hotspur FC",
-    "West Ham":             "West Ham United FC",
-    "Wolves":               "Wolverhampton Wanderers FC",
+    # ── Premier League ──
+    "Arsenal":                  "Arsenal FC",
+    "Aston Villa":              "Aston Villa FC",
+    "Bournemouth":              "AFC Bournemouth",
+    "Brentford":                "Brentford FC",
+    "Brighton":                 "Brighton & Hove Albion FC",
+    "Burnley":                  "Burnley FC",
+    "Chelsea":                  "Chelsea FC",
+    "Crystal Palace":           "Crystal Palace FC",
+    "Everton":                  "Everton FC",
+    "Fulham":                   "Fulham FC",
+    "Ipswich":                  "Ipswich Town FC",
+    "Leeds":                    "Leeds United FC",
+    "Leicester":                "Leicester City FC",
+    "Liverpool":                "Liverpool FC",
+    "Man City":                 "Manchester City FC",
+    "Manchester City":          "Manchester City FC",   # alias Understat
+    "Man United":               "Manchester United FC",
+    "Manchester United":        "Manchester United FC", # alias Understat
+    "Newcastle":                "Newcastle United FC",
+    "Newcastle United":         "Newcastle United FC",  # alias Understat
+    "Nott'm Forest":            "Nottingham Forest FC",
+    "Nottingham Forest":        "Nottingham Forest FC", # alias Understat
+    "Southampton":              "Southampton FC",
+    "Sunderland":               "Sunderland AFC",
+    "Tottenham":                "Tottenham Hotspur FC",
+    "West Ham":                 "West Ham United FC",
+    "Wolves":                   "Wolverhampton Wanderers FC",
+    "Wolverhampton Wanderers":  "Wolverhampton Wanderers FC",  # alias Understat
 
-    # LaLiga
+    # ── LaLiga ──
     "Ath Bilbao":           "Athletic Club",
     "Ath Madrid":           "Club Atlético de Madrid",
     "Atletico Madrid":      "Club Atlético de Madrid",
@@ -68,7 +73,7 @@ TEAM_NAME_MAP = {
     "Cadiz":                "Cádiz CF",
     "Elche":                "Elche CF",
 
-    # Bundesliga
+    # ── Bundesliga ──
     "Augsburg":             "FC Augsburg",
     "Bayern Munich":        "FC Bayern München",
     "Bayer Leverkusen":     "Bayer 04 Leverkusen",
@@ -92,7 +97,7 @@ TEAM_NAME_MAP = {
     "Schalke 04":           "FC Schalke 04",
     "Paderborn":            "SC Paderborn 07",
 
-    # Ligue 1
+    # ── Ligue 1 ──
     "Angers":               "Angers SCO",
     "Auxerre":              "AJ Auxerre",
     "Brest":                "Stade Brestois 29",
@@ -115,7 +120,7 @@ TEAM_NAME_MAP = {
     "Le Havre":             "Le Havre AC",
     "St Etienne":           "AS Saint-Étienne",
 
-    # Serie A
+    # ── Serie A ──
     "AC Milan":             "AC Milan",
     "Atalanta":             "Atalanta BC",
     "Bologna":              "Bologna FC 1909",
@@ -143,7 +148,7 @@ TEAM_NAME_MAP = {
     "Venezia":              "Venezia FC",
     "Verona":               "Hellas Verona FC",
 
-    # Eredivisie
+    # ── Eredivisie ──
     "Ajax":                 "AFC Ajax",
     "AZ":                   "AZ Alkmaar",
     "Excelsior":            "SBV Excelsior",
@@ -163,7 +168,7 @@ TEAM_NAME_MAP = {
     "Volendam":             "FC Volendam",
     "Zwolle":               "PEC Zwolle",
 
-    # Primeira Liga
+    # ── Primeira Liga ──
     "Benfica":              "Sport Lisboa e Benfica",
     "Braga":                "Sporting Clube de Braga",
     "Estoril":              "GD Estoril Praia",
@@ -201,30 +206,24 @@ def normalize_team_name(name: str) -> str:
             return full
     return name
 
+
 def compute_weights(dates: pd.Series, decay: float = DECAY_FACTOR) -> np.ndarray:
     """
     Peso exponencial: partidos más recientes pesan más.
     w_i = exp(-decay * días_desde_partido)
     """
     reference = dates.max()
-    days_ago  = (reference - dates).dt.days.values
-    weights   = np.exp(-decay * days_ago)
+    days_ago = (reference - dates).dt.days.values
+    weights = np.exp(-decay * days_ago)
     return weights / weights.sum()   # normalizado
 
 
 def build_team_ratings(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Para cada partido en df genera columnas de rating del equipo local y visitante
-    calculadas con TODOS los partidos ANTERIORES a esa fecha.
-    
-    Columnas añadidas:
-      home_att_rating, home_def_rating
-      away_att_rating, away_def_rating
-      league_avg_goals_h, league_avg_goals_a
+    (DEPRECATED — el ratings_cache nunca se actualiza. No usar hasta arreglar.)
     """
     df = df.copy().sort_values("date").reset_index(drop=True)
-    
-    # Pre-calcular medias de liga por competición
+
     league_avgs = (
         df.groupby("competition")
           .agg(avg_home=("home_goals", "mean"), avg_away=("away_goals", "mean"))
@@ -232,7 +231,7 @@ def build_team_ratings(df: pd.DataFrame) -> pd.DataFrame:
     )
     df = df.merge(league_avgs, on="competition", how="left")
 
-    ratings_cache = {}   # {team: (att, def)} updated rolling
+    ratings_cache = {}  # {team: (att, def)} updated rolling
 
     home_att, home_def = [], []
     away_att, away_def = [], []
@@ -253,10 +252,23 @@ def build_team_ratings(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-# feature_engineering.py — CORREGIDO
-
+# ─────────────────────────────────────────────────────────────────────────────
+#  Ratings por equipo (parametrizable: goles o xG)
+# ─────────────────────────────────────────────────────────────────────────────
 def compute_ratings_for_team(team: str, df: pd.DataFrame,
-                              as_of_date=None) -> dict:
+                              as_of_date=None,
+                              col_home: str = "home_goals",
+                              col_away: str = "away_goals") -> dict:
+    """
+    Ratings de ataque/defensa para `team`.
+
+    col_home / col_away: columnas usadas como "goles" del partido.
+        - Goles: ("home_goals", "away_goals")   ← default
+        - xG:    ("home_xg",    "away_xg")
+
+    La forma (form_5, form_10) SIEMPRE se calcula con goles reales,
+    independientemente de las columnas usadas para ratings.
+    """
     team = normalize_team_name(team)
     if as_of_date is None:
         as_of_date = df["date"].max()
@@ -265,6 +277,11 @@ def compute_ratings_for_team(team: str, df: pd.DataFrame,
     past = df[(df["date"] < as_of_date) & (df["date"] >= cutoff)].copy()
     if len(past) < 200:
         past = df[df["date"] < as_of_date].copy()
+
+    if col_home not in past.columns or col_away not in past.columns:
+        raise ValueError(f"Faltan columnas {col_home}/{col_away} en df")
+
+    past = past.dropna(subset=[col_home, col_away])
 
     home_matches = past[past["home_team"] == team].copy()
     away_matches = past[past["away_team"] == team].copy()
@@ -282,21 +299,26 @@ def compute_ratings_for_team(team: str, df: pd.DataFrame,
 
     if competition:
         league_data = past[past["competition"] == competition]
-        lg_avg_home = league_data["home_goals"].mean() if len(league_data) > 10 else 1.3
-        lg_avg_away = league_data["away_goals"].mean() if len(league_data) > 10 else 1.1
+        lg_avg_home = league_data[col_home].mean() if len(league_data) > 10 else 1.3
+        lg_avg_away = league_data[col_away].mean() if len(league_data) > 10 else 1.1
     else:
         lg_avg_home, lg_avg_away = 1.3, 1.1
+
+    if not np.isfinite(lg_avg_home) or lg_avg_home <= 0:
+        lg_avg_home = 1.3
+    if not np.isfinite(lg_avg_away) or lg_avg_away <= 0:
+        lg_avg_away = 1.1
 
     n_home = len(home_matches)
     n_away = len(away_matches)
 
-    att_home = (weighted_avg(home_matches["home_goals"], home_matches["date"], lg_avg_home)
+    att_home = (weighted_avg(home_matches[col_home], home_matches["date"], lg_avg_home)
                 / lg_avg_home) if n_home >= 3 else 1.0
-    def_home = (weighted_avg(home_matches["away_goals"], home_matches["date"], lg_avg_away)
+    def_home = (weighted_avg(home_matches[col_away], home_matches["date"], lg_avg_away)
                 / lg_avg_away) if n_home >= 3 else 1.0
-    att_away = (weighted_avg(away_matches["away_goals"], away_matches["date"], lg_avg_away)
+    att_away = (weighted_avg(away_matches[col_away], away_matches["date"], lg_avg_away)
                 / lg_avg_away) if n_away >= 3 else 1.0
-    def_away = (weighted_avg(away_matches["home_goals"], away_matches["date"], lg_avg_home)
+    def_away = (weighted_avg(away_matches[col_home], away_matches["date"], lg_avg_home)
                 / lg_avg_home) if n_away >= 3 else 1.0
 
     def regress(rating, n, target=1.0, weight=12):
@@ -307,9 +329,12 @@ def compute_ratings_for_team(team: str, df: pd.DataFrame,
     att_away = regress(att_away, n_away)
     def_away = regress(def_away, n_away)
 
+    # ── Forma: SIEMPRE con goles reales (independiente de col_home/col_away) ──
     all_team = pd.concat([
-        home_matches.assign(scored="home_goals", conceded="away_goals"),
-        away_matches.assign(scored="away_goals", conceded="home_goals"),
+        home_matches.assign(_scored=home_matches["home_goals"],
+                            _conceded=home_matches["away_goals"]),
+        away_matches.assign(_scored=away_matches["away_goals"],
+                            _conceded=away_matches["home_goals"]),
     ]).sort_values("date")
 
     def pts_from_recent(n):
@@ -317,8 +342,8 @@ def compute_ratings_for_team(team: str, df: pd.DataFrame,
         if len(recent) < 3:
             return 0.5
         pts = sum(
-            3 if r[r["scored"]] > r[r["conceded"]]
-            else 1 if r[r["scored"]] == r[r["conceded"]]
+            3 if r["_scored"] > r["_conceded"]
+            else 1 if r["_scored"] == r["_conceded"]
             else 0
             for _, r in recent.iterrows()
         )
@@ -338,12 +363,17 @@ def compute_ratings_for_team(team: str, df: pd.DataFrame,
     }
 
 
-def enrich_fixture(fixture_row: pd.Series, df_history: pd.DataFrame, as_of_date=None) -> dict:
+def enrich_fixture(fixture_row: pd.Series, df_history: pd.DataFrame,
+                   as_of_date=None,
+                   col_home: str = "home_goals",
+                   col_away: str = "away_goals") -> dict:
     ht = normalize_team_name(fixture_row["home_team"])
     at = normalize_team_name(fixture_row["away_team"])
 
-    hr = compute_ratings_for_team(ht, df_history, as_of_date=as_of_date)
-    ar = compute_ratings_for_team(at, df_history, as_of_date=as_of_date)
+    hr = compute_ratings_for_team(ht, df_history, as_of_date=as_of_date,
+                                   col_home=col_home, col_away=col_away)
+    ar = compute_ratings_for_team(at, df_history, as_of_date=as_of_date,
+                                   col_home=col_home, col_away=col_away)
 
     n_home_total = hr["n_home"] + hr["n_away"]
     n_away_total = ar["n_home"] + ar["n_away"]
@@ -356,8 +386,6 @@ def enrich_fixture(fixture_row: pd.Series, df_history: pd.DataFrame, as_of_date=
     else:
         confianza = "ALTA"
 
-    # CORREGIDO: HOME_ADVANTAGE como factor multiplicativo separado
-    # CORREGIDO: lg_avg_away viene del equipo visitante (ar), no del local (hr)
     lambda_home = (hr["att_home"] * ar["def_away"] * hr["lg_avg_home"]
                    * HOME_ADVANTAGE)
     lambda_away = (ar["att_away"] * hr["def_home"] * ar["lg_avg_away"])
