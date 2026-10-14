@@ -132,3 +132,91 @@ def reliability_curve(
             "n": n,
         })
     return pd.DataFrame(rows)
+  
+def walk_forward_with_calibration(
+    df: pd.DataFrame,
+    seasons: Iterable[str | int],
+    calibrator_factory,
+    **walk_kwargs,
+) -> pd.DataFrame:
+    """
+    Walk-forward con calibración honesta:
+      1. Predice OOS sin calibrar todas las temporadas (walk_forward_by_season).
+      2. Para cada temporada T (a partir de la 2ª), ajusta el calibrador
+         SOLO con las predicciones OOS de temporadas < T.
+      3. Aplica el calibrador a las predicciones de T.
+
+    Devuelve el DataFrame de walk_forward_by_season con columnas extra
+    prob_H_cal, prob_D_cal, prob_A_cal (y NaN en la primera temporada).
+    """
+    order = {"H": 0, "D": 1, "A": 2}
+    seasons = [str(s) for s in seasons]
+
+    preds_raw = walk_forward_by_season(df, seasons=seasons, **walk_kwargs)
+    if preds_raw.empty:
+        return preds_raw
+
+    out_frames = []
+    for i, season in enumerate(seasons):
+        season_preds = preds_raw[preds_raw["season"] == season].copy()
+        if season_preds.empty:
+            continue
+
+        # Primera temporada: no hay datos previos OOS para calibrar
+        if i == 0:
+            season_preds["prob_H_cal"] = np.nan
+            season_preds["prob_D_cal"] = np.nan
+            season_preds["prob_A_cal"] = np.nan
+            out_frames.append(season_preds)
+            continue
+
+        train_cal = preds_raw[preds_raw["season"].isin(seasons[:i])]
+        if len(train_cal) < 50:
+            season_preds["prob_H_cal"] = np.nan
+            season_preds["prob_D_cal"] = np.nan
+            season_preds["prob_A_cal"] = np.nan
+            out_frames.append(season_preds)
+            continue
+
+        X_cal = train_cal[["prob_H", "prob_D", "prob_A"]].values
+        y_cal = train_cal["actual"].map(order).values
+
+        cal = calibrator_factory()
+        cal.fit(X_cal, y_cal)
+
+        X_test = season_preds[["prob_H", "prob_D", "prob_A"]].values
+        cal_probs = cal.predict_proba(X_test)
+
+        season_preds["prob_H_cal"] = cal_probs[:, 0]
+        season_preds["prob_D_cal"] = cal_probs[:, 1]
+        season_preds["prob_A_cal"] = cal_probs[:, 2]
+        out_frames.append(season_preds)
+
+    return pd.concat(out_frames, ignore_index=True)
+
+
+def metrics_calibrated_vs_raw(preds_with_cal: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compara Brier/LogLoss antes/después de calibrar, por temporada.
+    Solo evalúa en temporadas donde la calibración está disponible.
+    """
+    order = {"H": 0, "D": 1, "A": 2}
+    rows = []
+
+    # Filtrar temporadas con calibración
+    valid = preds_with_cal.dropna(subset=["prob_H_cal", "prob_D_cal", "prob_A_cal"])
+    for season, g in valid.groupby("season"):
+        y_idx = g["actual"].map(order).values
+        probs_raw = g[["prob_H", "prob_D", "prob_A"]].values
+        probs_cal = g[["prob_H_cal", "prob_D_cal", "prob_A_cal"]].values
+        rows.append({
+            "season": season,
+            "n": len(g),
+            "brier_raw": brier_multiclass(y_idx, probs_raw),
+            "brier_cal": brier_multiclass(y_idx, probs_cal),
+            "log_loss_raw": log_loss_multiclass(y_idx, probs_raw),
+            "log_loss_cal": log_loss_multiclass(y_idx, probs_cal),
+            "acc_raw": (probs_raw.argmax(axis=1) == y_idx).mean(),
+            "acc_cal": (probs_cal.argmax(axis=1) == y_idx).mean(),
+        })
+    return pd.DataFrame(rows).sort_values("season").reset_index(drop=True)
