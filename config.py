@@ -1,4 +1,18 @@
-API_KEY = "03b862d9fa1146f1b977153267df8322"
+import os
+from dotenv import load_dotenv
+
+# Carga variables desde .env (no se sube al repo)
+load_dotenv()
+
+# ── Secrets (desde .env) ────────────────────────────────────────────────
+API_KEY = os.getenv("FOOTBALL_DATA_API_KEY")
+ODDS_API_KEY = os.getenv("ODDS_API_KEY")
+
+if not API_KEY:
+    raise ValueError("Falta FOOTBALL_DATA_API_KEY en el entorno (.env)")
+if not ODDS_API_KEY:
+    raise ValueError("Falta ODDS_API_KEY en el entorno (.env)")
+
 BASE_URL = "https://api.football-data.org/v4"
 
 LEAGUES = {
@@ -13,7 +27,6 @@ LEAGUES = {
 }
 
 EXTRA_LEAGUES_CSV = {
-    # ── Temporada ACTUAL 2025-26 ──────────────────────────────
     "PL_2526":  "https://www.football-data.co.uk/mmz4281/2526/E0.csv",
     "PD_2526":  "https://www.football-data.co.uk/mmz4281/2526/SP1.csv",
     "BL1_2526": "https://www.football-data.co.uk/mmz4281/2526/D1.csv",
@@ -21,8 +34,7 @@ EXTRA_LEAGUES_CSV = {
     "SA_2526":  "https://www.football-data.co.uk/mmz4281/2526/I1.csv",
     "DED_2526": "https://www.football-data.co.uk/mmz4281/2526/N1.csv",
     "PPL_2526": "https://www.football-data.co.uk/mmz4281/2526/P1.csv",
-    
-    # ── Temporada anterior 2024-25 ────────────────────────────
+
     "PL_2425":  "https://www.football-data.co.uk/mmz4281/2425/E0.csv",
     "PD_2425":  "https://www.football-data.co.uk/mmz4281/2425/SP1.csv",
     "BL1_2425": "https://www.football-data.co.uk/mmz4281/2425/D1.csv",
@@ -31,7 +43,6 @@ EXTRA_LEAGUES_CSV = {
     "DED_2425": "https://www.football-data.co.uk/mmz4281/2425/N1.csv",
     "PPL_2425": "https://www.football-data.co.uk/mmz4281/2425/P1.csv",
 
-    # ── Dos temporadas atrás 2023-24 ──────────────────────────
     "PL_2324":  "https://www.football-data.co.uk/mmz4281/2324/E0.csv",
     "PD_2324":  "https://www.football-data.co.uk/mmz4281/2324/SP1.csv",
     "BL1_2324": "https://www.football-data.co.uk/mmz4281/2324/D1.csv",
@@ -46,9 +57,7 @@ RECENT_MATCHES = 10
 DECAY_FACTOR   = 0.0025
 HOME_ADVANTAGE = 1.12
 
-
-# ── Filtros de apuestas ────────────────────────────────────────────────────────
-# Perfil CONSERVADOR: sin overfitting, baseline honesto para validación
+# ── Filtros de apuestas ────────────────────────────────────────────────
 FILTERS_CONSERVATIVE = {
     "MIN_EV":         0.08,
     "MAX_EV":         99.0,
@@ -57,7 +66,6 @@ FILTERS_CONSERVATIVE = {
     "MAX_ODDS":       8.00,
 }
 
-# Perfil PL-OPTIMIZADO: ajustado sobre PL 2025-26, overfitting conocido
 FILTERS_PL_TUNED = {
     "MIN_EV":         0.05,
     "MAX_EV":         0.10,
@@ -66,10 +74,8 @@ FILTERS_PL_TUNED = {
     "MAX_ODDS":       8.00,
 }
 
-# ── Perfil activo ──────────────────────────────────────────────────────────────
 ACTIVE_FILTERS = FILTERS_CONSERVATIVE
 
-# Constantes exportadas (el backtester las lee)
 MIN_EV         = ACTIVE_FILTERS["MIN_EV"]
 MAX_EV         = ACTIVE_FILTERS["MAX_EV"]
 MIN_PROB_MODEL = ACTIVE_FILTERS["MIN_PROB_MODEL"]
@@ -80,31 +86,27 @@ OUTPUT_CSV  = "output/value_bets.csv"
 OUTPUT_HTML = "output/dashboard.html"
 OUTPUT_JSON = "output/predictions.json"
 
-# --- Parámetros de Validación y Pesado ---
 SEASON_WEIGHTS = {
-    "2025": 1.0,  # Temporada actual: peso completo
-    "2024": 0.5   # Temporada anterior: peso reducido
+    "2025": 1.0,
+    "2024": 0.5
 }
 
-VALIDATION_THRESHOLD = 0.25  # Diferencia máxima vs cuotas (25%)
+VALIDATION_THRESHOLD = 0.25
 
-
-# ── The Odds API Configuration ────────────────────────────────────────────────
-ODDS_API_KEY = "ad4282e807ba1dfa878f252e64ad650b"  # Pega aquí tu API Key de https://the-odds-api.com
+# ── The Odds API Configuration ─────────────────────────────────────────
 ODDS_API_BASE_URL = "https://api.the-odds-api.com/v4/sports"
 
-# Mapeo de ligas internas a claves deportivas de The Odds API
 ODDS_API_SPORT_KEYS = {
-    "PL":  "soccer_epl",                    # Premier League
-    "PD":  "soccer_spain_la_liga",          # LaLiga
-    "BL1": "soccer_germany_bundesliga",     # Bundesliga
-    "FL1": "soccer_france_ligue_one",       # Ligue 1
-    "DED": "soccer_netherlands_eredivisie", # Eredivisie
-    "PPL": "soccer_portugal_primeira_liga", # Primeira Liga
-    "SA":  "soccer_italy_serie_a",          # Serie A
-    "CL":  "soccer_uefa_champs_league",     # UEFA Champions League
+    "PL":  "soccer_epl",
+    "PD":  "soccer_spain_la_liga",
+    "BL1": "soccer_germany_bundesliga",
+    "FL1": "soccer_france_ligue_one",
+    "DED": "soccer_netherlands_eredivisie",
+    "PPL": "soccer_portugal_primeira_liga",
+    "SA":  "soccer_italy_serie_a",
+    "CL":  "soccer_uefa_champs_league",
 }
 
-PREFERRED_BOOKMAKER = "onexbet"  # O 'pinnacle', 'betfair_ex', 'bet365', 'bwin', etc.
+PREFERRED_BOOKMAKER = "onexbet"
 ODDS_UPDATE_INTERVAL_HOURS = 3
 ODDS_DB_PATH = "data/processed/odds_snapshots.db"
