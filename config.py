@@ -13,7 +13,7 @@ LEAGUES = {
 }
 
 EXTRA_LEAGUES_CSV = {
-        # ── Temporada ACTUAL 2025-26 ──────────────────────────────
+    # ── Temporada ACTUAL 2025-26 ──────────────────────────────
     "PL_2526":  "https://www.football-data.co.uk/mmz4281/2526/E0.csv",
     "PD_2526":  "https://www.football-data.co.uk/mmz4281/2526/SP1.csv",
     "BL1_2526": "https://www.football-data.co.uk/mmz4281/2526/D1.csv",
@@ -21,7 +21,7 @@ EXTRA_LEAGUES_CSV = {
     "SA_2526":  "https://www.football-data.co.uk/mmz4281/2526/I1.csv",
     "DED_2526": "https://www.football-data.co.uk/mmz4281/2526/N1.csv",
     "PPL_2526": "https://www.football-data.co.uk/mmz4281/2526/P1.csv",
-
+    
     # ── Temporada anterior 2024-25 ────────────────────────────
     "PL_2425":  "https://www.football-data.co.uk/mmz4281/2425/E0.csv",
     "PD_2425":  "https://www.football-data.co.uk/mmz4281/2425/SP1.csv",
@@ -39,15 +39,12 @@ EXTRA_LEAGUES_CSV = {
     "SA_2324":  "https://www.football-data.co.uk/mmz4281/2324/I1.csv",
     "DED_2324": "https://www.football-data.co.uk/mmz4281/2324/N1.csv",
     "PPL_2324": "https://www.football-data.co.uk/mmz4281/2324/P1.csv",
-
-
 }
 
 SEASONS        = ["2024", "2025"]
 RECENT_MATCHES = 10
 DECAY_FACTOR   = 0.0025
 HOME_ADVANTAGE = 1.12
-
 
 
 # ── Filtros de apuestas ────────────────────────────────────────────────────────
@@ -70,7 +67,6 @@ FILTERS_PL_TUNED = {
 }
 
 # ── Perfil activo ──────────────────────────────────────────────────────────────
-# Cambiar aquí para alternar entre perfiles sin tocar el resto del código
 ACTIVE_FILTERS = FILTERS_CONSERVATIVE
 
 # Constantes exportadas (el backtester las lee)
@@ -91,3 +87,24 @@ SEASON_WEIGHTS = {
 }
 
 VALIDATION_THRESHOLD = 0.25  # Diferencia máxima vs cuotas (25%)
+
+
+# ── The Odds API Configuration ────────────────────────────────────────────────
+ODDS_API_KEY = "ad4282e807ba1dfa878f252e64ad650b"  # Pega aquí tu API Key de https://the-odds-api.com
+ODDS_API_BASE_URL = "https://api.the-odds-api.com/v4/sports"
+
+# Mapeo de ligas internas a claves deportivas de The Odds API
+ODDS_API_SPORT_KEYS = {
+    "PL":  "soccer_epl",                    # Premier League
+    "PD":  "soccer_spain_la_liga",          # LaLiga
+    "BL1": "soccer_germany_bundesliga",     # Bundesliga
+    "FL1": "soccer_france_ligue_one",       # Ligue 1
+    "DED": "soccer_netherlands_eredivisie", # Eredivisie
+    "PPL": "soccer_portugal_primeira_liga", # Primeira Liga
+    "SA":  "soccer_italy_serie_a",          # Serie A
+    "CL":  "soccer_uefa_champs_league",     # UEFA Champions League
+}
+
+PREFERRED_BOOKMAKER = "onexbet"  # O 'pinnacle', 'betfair_ex', 'bet365', 'bwin', etc.
+ODDS_UPDATE_INTERVAL_HOURS = 3
+ODDS_DB_PATH = "data/processed/odds_snapshots.db"

@@ -1,14 +1,14 @@
 """
 main.py
-Orquestador principal del pipeline.
+Orquestador principal del pipeline con integración de API-Football para cuotas prepartido.
 
 Uso:
-  python main.py --mode analyze   # analiza partidos de los próximos 7 días
+  python main.py --mode analyze   # analiza partidos de los próximos 7 días y obtiene cuotas
   python main.py --mode backtest  # valida el modelo con datos históricos
   python main.py --mode download  # solo descarga/actualiza datos históricos
   
   # Analizar un partido específico con cuotas manuales:
-  python main.py --mode single --home "Arsenal" --away "Chelsea" \\
+  python main.py --mode single --home "Arsenal" --away "Chelsea" \
                  --odds "1:2.10,X:3.40,2:3.60,O2.5:1.85,BTTS_Y:1.75"
 """
 
@@ -30,6 +30,7 @@ from src.models           import predict_match, estimate_rho
 from src.value_bet_detector import (analyze_fixture, add_kelly,
                                      print_value_bets)
 from src.backtester       import run_backtest
+from src.odds_scheduler  import fetch_and_store_fixture_odds
 
 
 # ── Caché de datos históricos ──────────────────────────────────────────────────
@@ -109,8 +110,9 @@ def save_predictions(matches: list[dict], days_ahead: int) -> Path:
 
 def run_analyze(days_ahead: int = 7, manual_odds: dict = None):
     """
-    Descarga fixtures próximos, predice y detecta value bets.
-    Si no hay cuotas automáticas, muestra solo probabilidades del modelo.
+    Descarga fixtures próximos, predice mediante el modelo cuantitativo,
+    obtiene cuotas prepartido de API-Football (o manuales si se indican)
+    y evalúa value bets.
     """
     df_history = get_history()
     if df_history.empty:
@@ -130,6 +132,7 @@ def run_analyze(days_ahead: int = 7, manual_odds: dict = None):
 
     all_predictions = {}
     results = []
+    fixtures_with_odds = []
 
     for _, fix in fixtures.iterrows():
         try:
@@ -139,6 +142,28 @@ def run_analyze(days_ahead: int = 7, manual_odds: dict = None):
                                      rho=rho, model="dixon_coles")
             key = (fix["home_team"], fix["away_team"])
             all_predictions[key] = pred
+
+            date_str = str(features["date"])[:10]
+
+            # Obtener cuotas desde manual_odds o mediante API-Football / SQLite caché
+            if manual_odds:
+                odds = manual_odds
+            else:
+                odds = fetch_and_store_fixture_odds(
+                    home_team=features["home_team"],
+                    away_team=features["away_team"],
+                    competition=features["competition"],
+                    date_str=date_str
+                )
+
+            fixtures_with_odds.append({
+                "home_team": features["home_team"],
+                "away_team": features["away_team"],
+                "date": date_str,
+                "competition": features["competition"],
+                "confidence": features.get("confianza", "ALTA"),
+                "odds": odds
+            })
 
             row = {
                 "date":        features["date"],
@@ -177,30 +202,30 @@ def run_analyze(days_ahead: int = 7, manual_odds: dict = None):
               f"{r['prob_home']:>7.1%} {r['prob_draw']:>7.1%} {r['prob_away']:>7.1%} "
               f"{r.get('over_2.5',0):>7.1%} {r.get('btts_yes',0):>6.1%}")
 
-    # Value bets con cuotas manuales (si se pasan)
-    if manual_odds:
-        print("\n\n  Analizando value bets con cuotas manuales...")
-        all_bets = []
-        for key, pred in all_predictions.items():
-            ht, at = key
-            row_match = fixtures[
-                (fixtures["home_team"] == ht) & (fixtures["away_team"] == at)
-            ].iloc[0] if not fixtures[
-                (fixtures["home_team"] == ht) & (fixtures["away_team"] == at)
-            ].empty else None
-            if row_match is not None:
-                bets = analyze_fixture(
-                    pred, manual_odds,
-                    home_team=ht, away_team=at,
-                    competition=row_match.get("competition", "")
-                )
-                all_bets.extend(bets)
-        
+    # Evaluar Value Bets con el Motor de Evaluación de Apuestas
+    all_bets = []
+    for f_item in fixtures_with_odds:
+        key = (f_item["home_team"], f_item["away_team"])
+        pred = all_predictions.get(key)
+        odds = f_item.get("odds", {})
+        if pred and odds:
+            bets = analyze_fixture(
+                pred, odds,
+                home_team=f_item["home_team"],
+                away_team=f_item["away_team"],
+                date=f_item["date"],
+                competition=f_item["competition"],
+                confianza=f_item.get("confidence", "ALTA")
+            )
+            all_bets.extend(bets)
+
+    if all_bets:
         df_bets = add_kelly(pd.DataFrame(all_bets))
         print_value_bets(df_bets)
-        if not df_bets.empty:
-            df_bets.to_csv(ROOT / OUTPUT_CSV, index=False)
-            print(f"\n  CSV guardado en: {OUTPUT_CSV}")
+        df_bets.to_csv(ROOT / OUTPUT_CSV, index=False)
+        print(f"\n  CSV de Value Bets guardado en: {OUTPUT_CSV}")
+    else:
+        print("\n  Sin value bets encontradas para las cuotas actuales.")
 
     return df_preds
 
