@@ -1,46 +1,55 @@
 # Football Betting Pipeline
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/000009987/football_pipeline)
+
 Pipeline completo para análisis estadístico de partidos de fútbol y detección de value bets.
 
 ## Modelos implementados
+
 - **Poisson estándar** — baseline clásico
 - **Dixon-Coles** — corrección para resultados de baja puntuación (0-0, 1-0, 0-1, 1-1)
 - **Estimación de rho** — optimización MLE sobre datos históricos
 
 ## Ligas soportadas
-| Código | Liga |
-|--------|------|
-| PL  | Premier League (Inglaterra) |
-| PD  | LaLiga (España) |
-| BL1 | Bundesliga (Alemania) |
-| FL1 | Ligue 1 (Francia) |
-| DED | Eredivisie (Países Bajos) |
-| PPL | Primeira Liga (Portugal) |
-| CL  | UEFA Champions League |
-| EL  | UEFA Europa League |
-| — | Eliteserien (Noruega) — vía CSV |
-| — | Liga Saudí — vía CSV |
+
+| Código | Liga                            |
+| ------ | ------------------------------- |
+| PL     | Premier League (Inglaterra)     |
+| PD     | LaLiga (España)                 |
+| BL1    | Bundesliga (Alemania)           |
+| FL1    | Ligue 1 (Francia)               |
+| DED    | Eredivisie (Países Bajos)       |
+| PPL    | Primeira Liga (Portugal)        |
+| CL     | UEFA Champions League           |
+| EL     | UEFA Europa League              |
+| —      | Eliteserien (Noruega) — vía CSV |
+| —      | Liga Saudí — vía CSV            |
 
 ---
 
 ## Setup rápido
 
 ### 1. Instalar dependencias
+
 ```bash
 pip install -r requirements.txt
 ```
 
 ### 2. Obtener API Key (GRATIS)
+
 Regístrate en https://www.football-data.org/client/register
 Copia tu API key y pégala en `config.py`:
+
 ```python
 API_KEY = "tu_key_aqui"
 ```
 
 ### 3. Descargar datos históricos
+
 ```bash
 python main.py --mode download
 ```
+
 Primera ejecución descarga ~3 temporadas de cada liga. Tarda ~5-10 minutos por el rate limit del plan gratuito (10 req/min). Los datos se cachean en `data/processed/history.parquet`.
 
 ---
@@ -48,22 +57,28 @@ Primera ejecución descarga ~3 temporadas de cada liga. Tarda ~5-10 minutos por 
 ## Uso
 
 ### Analizar próximos partidos
+
 ```bash
 python main.py --mode analyze
 python main.py --mode analyze --days 3
 ```
+
 El comando analiza en una sola ejecución todos los fixtures disponibles de las ligas configuradas y guarda sus probabilidades en `output/predictions.json`.
 
 ### Ver las predicciones en el dashboard
+
 Después del análisis, ejecuta:
+
 ```bash
 python main.py --mode dashboard
 ```
+
 Se abrirá el dashboard local en el navegador. También puedes abrir `http://127.0.0.1:8765/` manualmente. Para detener el servidor, pulsa `Ctrl+C` en la terminal. El dashboard permite buscar equipos y filtrar por liga o fecha.
 
 La API de fixtures utilizada no entrega cuotas de apuestas; por eso se muestran todas las predicciones aunque no haya cuotas y no se calculan value bets automáticamente para estos partidos. Para evaluar value bets hacen falta cuotas actuales.
 
 ### Analizar un partido específico con tus cuotas
+
 ```bash
 python main.py --mode single \
     --home "Arsenal" --away "Chelsea" \
@@ -72,17 +87,20 @@ python main.py --mode single \
 ```
 
 **Claves de mercados:**
+
 - `1` = victoria local · `X` = empate · `2` = victoria visitante
 - `O0.5`, `O1.5`, `O2.5`, `O3.5`, `O4.5` = over
 - `U0.5`, `U1.5`, `U2.5`, `U3.5` = under
 - `BTTS_Y` = ambos marcan sí · `BTTS_N` = no
 
 ### Backtest (validación histórica)
+
 ```bash
 python main.py --mode backtest --comp PL
 ```
 
 ### Dashboard interactivo
+
 Inicia el análisis con `python main.py --mode analyze` y luego el servidor con `python main.py --mode dashboard`. La pestaña «Partidos analizados» muestra los fixtures y las predicciones guardadas; las pestañas restantes conservan las herramientas manuales de cálculo.
 
 ---
@@ -125,13 +143,13 @@ datos históricos → ratings (att/def) → lambdas (xG esperados)
 
 ## Parámetros clave en config.py
 
-| Parámetro | Default | Descripción |
-|-----------|---------|-------------|
-| `DECAY_FACTOR` | 0.03 | Mayor = más peso a partidos recientes |
-| `HOME_ADVANTAGE` | 0.25 | Boost de 25% al λ del equipo local |
-| `MIN_EV` | 0.04 | EV mínimo para reportar apuesta (4%) |
-| `MIN_ODDS` | 1.30 | Cuota mínima (evitar favoritos extremos) |
-| `MAX_ODDS` | 8.00 | Cuota máxima (evitar lotería) |
+| Parámetro        | Default | Descripción                              |
+| ---------------- | ------- | ---------------------------------------- |
+| `DECAY_FACTOR`   | 0.03    | Mayor = más peso a partidos recientes    |
+| `HOME_ADVANTAGE` | 0.25    | Boost de 25% al λ del equipo local       |
+| `MIN_EV`         | 0.04    | EV mínimo para reportar apuesta (4%)     |
+| `MIN_ODDS`       | 1.30    | Cuota mínima (evitar favoritos extremos) |
+| `MAX_ODDS`       | 8.00    | Cuota máxima (evitar lotería)            |
 
 ---
 
