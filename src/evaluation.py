@@ -392,3 +392,157 @@ def metrics_btts_market(preds: pd.DataFrame) -> pd.DataFrame:
             "ll_base": ll_base,
         })
     return pd.DataFrame(rows).sort_values("season").reset_index(drop=True)
+  
+  # ── Corrección de sesgo walk-forward (para O/U y BTTS) ─────────────────
+
+def bias_corrected_markets(
+    preds: pd.DataFrame,
+    seasons: Iterable[str | int],
+) -> pd.DataFrame:
+    """
+    Añade columnas *_corr con probabilidades corregidas de sesgo walk-forward.
+
+    Para cada temporada T:
+      bias_T = mean(predicho - real) en temporadas < T
+      prob_corr = clip(prob_raw - bias_T, 0, 1)
+
+    Columnas añadidas:
+      - prob_over_25_corr
+      - prob_btts_yes_corr
+      - bias_over_applied (informativo)
+      - bias_btts_applied (informativo)
+    """
+    seasons = [str(s) for s in seasons]
+    preds = preds.copy()
+    preds["prob_over_25_corr"] = np.nan
+    preds["prob_btts_yes_corr"] = np.nan
+    preds["bias_over_applied"] = np.nan
+    preds["bias_btts_applied"] = np.nan
+
+    for i, season in enumerate(seasons):
+        mask_test = preds["season"] == season
+        if not mask_test.any():
+            continue
+
+        if i == 0:
+            # Primera temporada: sin histórico para corregir
+            preds.loc[mask_test, "prob_over_25_corr"] = preds.loc[mask_test, "prob_over_25"]
+            preds.loc[mask_test, "prob_btts_yes_corr"] = preds.loc[mask_test, "prob_btts_yes"]
+            preds.loc[mask_test, "bias_over_applied"] = 0.0
+            preds.loc[mask_test, "bias_btts_applied"] = 0.0
+            continue
+
+        mask_train = preds["season"].isin(seasons[:i])
+        if mask_train.sum() < 30:
+            preds.loc[mask_test, "prob_over_25_corr"] = preds.loc[mask_test, "prob_over_25"]
+            preds.loc[mask_test, "prob_btts_yes_corr"] = preds.loc[mask_test, "prob_btts_yes"]
+            preds.loc[mask_test, "bias_over_applied"] = 0.0
+            preds.loc[mask_test, "bias_btts_applied"] = 0.0
+            continue
+
+        train = preds[mask_train]
+        y_over = (train["total_goals"].values >= 3).astype(int)
+        y_btts = train["btts_actual"].values.astype(int)
+
+        bias_over = float(np.mean(train["prob_over_25"].values - y_over))
+        bias_btts = float(np.mean(train["prob_btts_yes"].values - y_btts))
+
+        preds.loc[mask_test, "prob_over_25_corr"] = np.clip(
+            preds.loc[mask_test, "prob_over_25"].values - bias_over, 0.0, 1.0
+        )
+        preds.loc[mask_test, "prob_btts_yes_corr"] = np.clip(
+            preds.loc[mask_test, "prob_btts_yes"].values - bias_btts, 0.0, 1.0
+        )
+        preds.loc[mask_test, "bias_over_applied"] = bias_over
+        preds.loc[mask_test, "bias_btts_applied"] = bias_btts
+
+    return preds
+
+
+def metrics_ou_corrected(preds_corr: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compara Brier/LL de O/U 2.5: modelo raw vs modelo corregido vs cuotas.
+    Solo evalúa en temporadas con corrección disponible.
+    """
+    eps = 1e-12
+    rows = []
+    for season, g in preds_corr.groupby("season"):
+        if g["prob_over_25_corr"].isna().any():
+            continue
+
+        y_over = (g["total_goals"].values >= 3).astype(int)
+        p_raw = np.clip(g["prob_over_25"].values, eps, 1 - eps)
+        p_corr = np.clip(g["prob_over_25_corr"].values, eps, 1 - eps)
+
+        brier_raw = np.mean((p_raw - y_over) ** 2)
+        brier_corr = np.mean((p_corr - y_over) ** 2)
+        ll_raw = -np.mean(y_over * np.log(p_raw) + (1 - y_over) * np.log(1 - p_raw))
+        ll_corr = -np.mean(y_over * np.log(p_corr) + (1 - y_over) * np.log(1 - p_corr))
+
+        o_over = g["odds_over_25_close"].fillna(g["odds_over_25"])
+        o_under = g["odds_under_25_close"].fillna(g["odds_under_25"])
+        mask = o_over.notna() & o_under.notna()
+
+        if mask.sum() > 0:
+            p_mkt = 1.0 / o_over[mask].values
+            pu_mkt = 1.0 / o_under[mask].values
+            p_mkt = p_mkt / (p_mkt + pu_mkt)
+            p_mkt = np.clip(p_mkt, eps, 1 - eps)
+            y_mkt = y_over[mask.values]
+            brier_mkt = np.mean((p_mkt - y_mkt) ** 2)
+            ll_mkt = -np.mean(y_mkt * np.log(p_mkt) + (1 - y_mkt) * np.log(1 - p_mkt))
+            n_mkt = int(mask.sum())
+        else:
+            brier_mkt = np.nan
+            ll_mkt = np.nan
+            n_mkt = 0
+
+        rows.append({
+            "season": season,
+            "n": len(g),
+            "n_con_cuotas": n_mkt,
+            "brier_raw": brier_raw,
+            "brier_corr": brier_corr,
+            "brier_cuotas": brier_mkt,
+            "ll_raw": ll_raw,
+            "ll_corr": ll_corr,
+            "ll_cuotas": ll_mkt,
+            "bias_over": g["bias_over_applied"].iloc[0],
+        })
+    return pd.DataFrame(rows).sort_values("season").reset_index(drop=True)
+
+
+def metrics_btts_corrected(preds_corr: pd.DataFrame) -> pd.DataFrame:
+    """Compara Brier/LL de BTTS: raw vs corregido vs baseline."""
+    eps = 1e-12
+    rows = []
+    for season, g in preds_corr.groupby("season"):
+        if g["prob_btts_yes_corr"].isna().any():
+            continue
+
+        y_btts = g["btts_actual"].values.astype(int)
+        p_raw = np.clip(g["prob_btts_yes"].values, eps, 1 - eps)
+        p_corr = np.clip(g["prob_btts_yes_corr"].values, eps, 1 - eps)
+
+        brier_raw = np.mean((p_raw - y_btts) ** 2)
+        brier_corr = np.mean((p_corr - y_btts) ** 2)
+        ll_raw = -np.mean(y_btts * np.log(p_raw) + (1 - y_btts) * np.log(1 - p_raw))
+        ll_corr = -np.mean(y_btts * np.log(p_corr) + (1 - y_btts) * np.log(1 - p_corr))
+
+        base = y_btts.mean()
+        brier_base = np.mean((base - y_btts) ** 2)
+        ll_base = -np.mean(y_btts * np.log(base) + (1 - y_btts) * np.log(1 - base))
+
+        rows.append({
+            "season": season,
+            "n": len(g),
+            "freq_btts": base,
+            "brier_raw": brier_raw,
+            "brier_corr": brier_corr,
+            "brier_base": brier_base,
+            "ll_raw": ll_raw,
+            "ll_corr": ll_corr,
+            "ll_base": ll_base,
+            "bias_btts": g["bias_btts_applied"].iloc[0],
+        })
+    return pd.DataFrame(rows).sort_values("season").reset_index(drop=True)
