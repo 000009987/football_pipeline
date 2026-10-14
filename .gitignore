@@ -30,3 +30,4 @@ data/raw/*.csv
 data/processed/
 data/output/
 reports/
+output/predictions.json*

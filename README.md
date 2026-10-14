@@ -52,6 +52,16 @@ Primera ejecución descarga ~3 temporadas de cada liga. Tarda ~5-10 minutos por 
 python main.py --mode analyze
 python main.py --mode analyze --days 3
 ```
+El comando analiza en una sola ejecución todos los fixtures disponibles de las ligas configuradas y guarda sus probabilidades en `output/predictions.json`.
+
+### Ver las predicciones en el dashboard
+Después del análisis, ejecuta:
+```bash
+python main.py --mode dashboard
+```
+Se abrirá el dashboard local en el navegador. También puedes abrir `http://127.0.0.1:8765/` manualmente. Para detener el servidor, pulsa `Ctrl+C` en la terminal. El dashboard permite buscar equipos y filtrar por liga o fecha.
+
+La API de fixtures utilizada no entrega cuotas de apuestas; por eso se muestran todas las predicciones aunque no haya cuotas y no se calculan value bets automáticamente para estos partidos. Para evaluar value bets hacen falta cuotas actuales.
 
 ### Analizar un partido específico con tus cuotas
 ```bash
@@ -73,7 +83,7 @@ python main.py --mode backtest --comp PL
 ```
 
 ### Dashboard interactivo
-Abre `dashboard.html` en tu navegador. Permite calcular probabilidades y value bets directamente en el browser ingresando los lambdas estimados.
+Inicia el análisis con `python main.py --mode analyze` y luego el servidor con `python main.py --mode dashboard`. La pestaña «Partidos analizados» muestra los fixtures y las predicciones guardadas; las pestañas restantes conservan las herramientas manuales de cálculo.
 
 ---
 
@@ -86,6 +96,7 @@ football_pipeline/
 ├── requirements.txt
 ├── dashboard.html          ← Dashboard interactivo (browser)
 ├── src/
+│   ├── dashboard_server.py ← Servidor local de solo lectura para el dashboard
 │   ├── data_loader.py      ← Descarga de football-data.org
 │   ├── feature_engineering.py ← Ratings, forma, lambdas
 │   ├── models.py           ← Poisson + Dixon-Coles + mercados

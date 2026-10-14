@@ -82,6 +82,7 @@ MAX_ODDS       = ACTIVE_FILTERS["MAX_ODDS"]
 
 OUTPUT_CSV  = "output/value_bets.csv"
 OUTPUT_HTML = "output/dashboard.html"
+OUTPUT_JSON = "output/predictions.json"
 
 # --- Parámetros de Validación y Pesado ---
 SEASON_WEIGHTS = {

@@ -135,6 +135,45 @@
     padding: 5px; text-align: center; }
   .score-result { font-size: 12px; font-weight: 600; }
   .score-pct { font-size: 10px; color: var(--text2); }
+
+  .dashboard-summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;
+    margin-bottom: 16px; }
+  .dashboard-summary .metric-value { font-size: 20px; }
+  .dashboard-toolbar { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;
+    margin-bottom: 14px; }
+  .dashboard-toolbar .field { min-width: 180px; flex: 1; }
+  .dashboard-toolbar .field.search { flex: 2; }
+  .dashboard-note { color: var(--text2); font-size: 11px; margin: 10px 0 14px; }
+  .table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+  .fixtures-table { width: 100%; border-collapse: collapse; min-width: 980px; }
+  .fixtures-table th, .fixtures-table td { padding: 10px 12px; text-align: left;
+    border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .fixtures-table th { background: var(--bg2); color: var(--text2); font-size: 10px;
+    text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
+  .fixtures-table tbody tr:hover { background: rgba(255,255,255,.025); }
+  .fixture-date, .fixture-comp, .fixture-meta { color: var(--text2); font-size: 11px; }
+  .fixture-teams { font-weight: 600; min-width: 190px; }
+  .fixture-markets { min-width: 165px; font-size: 10px; color: var(--text2); }
+  .fixture-markets summary { cursor: pointer; color: var(--blue); }
+  .fixture-markets div { padding-top: 5px; white-space: nowrap; }
+  .probabilities { display: flex; gap: 5px; }
+  .prob-chip { display: inline-block; min-width: 48px; text-align: center;
+    padding: 3px 5px; border-radius: 4px; background: var(--bg3); font-size: 11px; }
+  .prob-chip.home { color: var(--blue); }
+  .prob-chip.draw { color: var(--amber); }
+  .prob-chip.away { color: var(--purple); }
+  .confidence { display: inline-block; border-radius: 4px; padding: 2px 6px;
+    font-size: 10px; background: var(--bg3); color: var(--text2); }
+  .confidence.alta { color: var(--green); }
+  .confidence.media { color: var(--amber); }
+  .confidence.baja { color: var(--red); }
+  @media (max-width: 650px) {
+    .container { padding: 14px 12px; }
+    .header { padding: 12px; }
+    .dashboard-summary { grid-template-columns: 1fr; gap: 8px; }
+    .tabs { overflow-x: auto; }
+    .tab { white-space: nowrap; padding: 8px 12px; }
+  }
 </style>
 </head>
 <body>
@@ -152,10 +191,54 @@
 
 <div class="container">
   <div class="tabs">
-    <div class="tab active" onclick="switchTab('analyzer')">Analizador</div>
-    <div class="tab" onclick="switchTab('value')">Value Bets</div>
-    <div class="tab" onclick="switchTab('matrix')">Matriz</div>
-    <div class="tab" onclick="switchTab('cli')">Comandos CLI</div>
+    <div class="tab active" data-tab="predictions" onclick="switchTab('predictions')">Partidos analizados</div>
+    <div class="tab" data-tab="analyzer" onclick="switchTab('analyzer')">Analizador manual</div>
+    <div class="tab" data-tab="value" onclick="switchTab('value')">Value Bets</div>
+    <div class="tab" data-tab="matrix" onclick="switchTab('matrix')">Matriz</div>
+    <div class="tab" data-tab="cli" onclick="switchTab('cli')">Comandos CLI</div>
+  </div>
+
+  <!-- TAB: Predicciones guardadas -->
+  <div class="panel active" id="panel-predictions">
+    <div class="dashboard-summary">
+      <div class="metric">
+        <div class="metric-label">Partidos encontrados</div>
+        <div class="metric-value" id="fixture-count">—</div>
+        <div class="metric-sub" id="fixture-count-sub">Cargando resultados guardados…</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Competiciones</div>
+        <div class="metric-value" id="competition-count">—</div>
+        <div class="metric-sub">En el análisis más reciente</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Último análisis</div>
+        <div class="metric-value" id="analysis-date" style="font-size:14px">—</div>
+        <div class="metric-sub" id="analysis-period">—</div>
+      </div>
+    </div>
+
+    <div class="dashboard-toolbar">
+      <div class="field search">
+        <label for="fixture-search">Buscar equipo</label>
+        <input id="fixture-search" type="search" placeholder="Ej. Arsenal">
+      </div>
+      <div class="field">
+        <label for="competition-filter">Competición</label>
+        <select id="competition-filter"><option value="">Todas</option></select>
+      </div>
+      <div class="field">
+        <label for="date-filter">Fecha</label>
+        <input id="date-filter" type="date">
+      </div>
+      <button class="btn btn-secondary" type="button" onclick="loadPredictions()">Actualizar</button>
+    </div>
+
+    <div class="dashboard-note">
+      Las cuotas no vienen incluidas en los fixtures de football-data.org. Las predicciones se muestran sin cuotas;
+      para calcular value bets necesitas aportar cuotas actuales.
+    </div>
+    <div id="fixtures-area" class="no-results">Cargando predicciones…</div>
   </div>
 
   <!-- TAB: Analizador -->
@@ -316,19 +399,22 @@
       <div class="cli-comment"># 2. Analizar próximos 7 días de todos las ligas</div>
       <div><span class="cli-cmd">python main.py</span> <span class="cli-arg">--mode</span> <span class="cli-val">analyze</span></div>
       <br>
-      <div class="cli-comment"># 3. Analizar próximos 3 días</div>
+      <div class="cli-comment"># 3. Abrir el dashboard con todos los partidos y predicciones</div>
+      <div><span class="cli-cmd">python main.py</span> <span class="cli-arg">--mode</span> <span class="cli-val">dashboard</span></div>
+      <br>
+      <div class="cli-comment"># 4. Analizar próximos 3 días</div>
       <div><span class="cli-cmd">python main.py</span> <span class="cli-arg">--mode</span> <span class="cli-val">analyze</span> <span class="cli-arg">--days</span> <span class="cli-val">3</span></div>
       <br>
-      <div class="cli-comment"># 4. Partido específico con cuotas manuales</div>
+      <div class="cli-comment"># 5. Partido específico con cuotas manuales</div>
       <div><span class="cli-cmd">python main.py</span> <span class="cli-arg">--mode</span> <span class="cli-val">single</span> \</div>
       <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cli-arg">--home</span> <span class="cli-val">"Arsenal"</span> <span class="cli-arg">--away</span> <span class="cli-val">"Chelsea"</span> \</div>
       <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cli-arg">--comp</span> <span class="cli-val">"PL"</span> \</div>
       <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="cli-arg">--odds</span> <span class="cli-val">"1:2.10,X:3.40,2:3.60,O2.5:1.85,BTTS_Y:1.75"</span></div>
       <br>
-      <div class="cli-comment"># 5. Backtest en Premier League</div>
+      <div class="cli-comment"># 6. Backtest en Premier League</div>
       <div><span class="cli-cmd">python main.py</span> <span class="cli-arg">--mode</span> <span class="cli-val">backtest</span> <span class="cli-arg">--comp</span> <span class="cli-val">PL</span></div>
       <br>
-      <div class="cli-comment"># 6. Forzar recarga de datos históricos</div>
+      <div class="cli-comment"># 7. Forzar recarga de datos históricos</div>
       <div><span class="cli-cmd">python main.py</span> <span class="cli-arg">--mode</span> <span class="cli-val">download</span> <span class="cli-arg">--reload</span></div>
     </div>
 
@@ -348,11 +434,146 @@
 
 <script>
 function switchTab(id) {
-  document.querySelectorAll('.tab').forEach((t,i) => {
-    t.classList.toggle('active', ['analyzer','value','matrix','cli'][i] === id);
-  });
+  document.querySelectorAll('.tab').forEach(t =>
+    t.classList.toggle('active', t.dataset.tab === id));
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.getElementById('panel-' + id).classList.add('active');
+}
+
+const competitionNames = {
+  PL: 'Premier League', PD: 'LaLiga', BL1: 'Bundesliga', FL1: 'Ligue 1',
+  DED: 'Eredivisie', PPL: 'Primeira Liga', SA: 'Serie A', CL: 'Champions League'
+};
+let dashboardPayload = null;
+
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]);
+}
+
+function formatProbability(value) {
+  const probability = Number(value);
+  return value == null || !Number.isFinite(probability)
+    ? '—' : (probability * 100).toFixed(1) + '%';
+}
+
+function formatGoals(value) {
+  const goals = Number(value);
+  return value == null || !Number.isFinite(goals) ? '—' : goals.toFixed(2);
+}
+
+function renderFixtures(payload) {
+  const matches = Array.isArray(payload.matches) ? payload.matches : [];
+  const filter = document.getElementById('competition-filter');
+  const selectedCompetition = filter.value;
+  const competitions = [...new Set(matches.map(match => match.competition).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b));
+  filter.innerHTML = '<option value="">Todas</option>' + competitions.map(code =>
+    `<option value="${escapeHtml(code)}">${escapeHtml(competitionNames[code] || code)}</option>`
+  ).join('');
+  filter.value = competitions.includes(selectedCompetition) ? selectedCompetition : '';
+
+  const dateValue = document.getElementById('date-filter').value;
+  const searchValue = document.getElementById('fixture-search').value.trim().toLocaleLowerCase();
+  const visibleMatches = matches.filter(match => {
+    const teams = `${match.home_team || ''} ${match.away_team || ''}`.toLocaleLowerCase();
+    return (!filter.value || match.competition === filter.value)
+      && (!dateValue || String(match.date || '').slice(0, 10) === dateValue)
+      && (!searchValue || teams.includes(searchValue));
+  });
+
+  document.getElementById('fixture-count').textContent = String(matches.length);
+  document.getElementById('fixture-count-sub').textContent =
+    `${visibleMatches.length} partido${visibleMatches.length === 1 ? '' : 's'} mostrado${visibleMatches.length === 1 ? '' : 's'}`;
+  document.getElementById('competition-count').textContent = String(competitions.length);
+  document.getElementById('analysis-period').textContent = payload.days_ahead == null
+    ? 'Rango de análisis no disponible' : `Próximos ${escapeHtml(payload.days_ahead)} días`;
+
+  const generatedAt = payload.generated_at ? new Date(payload.generated_at) : null;
+  document.getElementById('analysis-date').textContent =
+    generatedAt && !Number.isNaN(generatedAt.getTime())
+      ? generatedAt.toLocaleString('es-MX', {dateStyle: 'medium', timeStyle: 'short'})
+      : 'Sin análisis guardado';
+
+  const area = document.getElementById('fixtures-area');
+  if (!matches.length) {
+    area.className = 'no-results';
+    area.textContent = payload.generated_at
+      ? 'No se encontraron partidos próximos en el último análisis. Prueba con más días usando --days.'
+      : 'Todavía no hay resultados guardados. Ejecuta “python main.py --mode analyze” y después inicia el dashboard.';
+    return;
+  }
+
+  if (!visibleMatches.length) {
+    area.className = 'no-results';
+    area.textContent = 'No hay partidos que coincidan con esos filtros.';
+    return;
+  }
+
+  area.className = 'table-wrap';
+  const rows = visibleMatches.map(match => {
+    const matchDate = String(match.date || '').slice(0, 10);
+    const date = matchDate
+      ? new Date(`${matchDate}T00:00:00`).toLocaleDateString('es-MX', {
+          weekday: 'short', day: 'numeric', month: 'short'
+        })
+      : 'Fecha no disponible';
+    const exactScores = Object.entries(match.exact_scores || {})
+      .sort((a, b) => Number(b[1]) - Number(a[1]))
+      .slice(0, 3)
+      .map(([score, probability]) =>
+        `${escapeHtml(score)} (${formatProbability(probability)})`)
+      .join('<br>');
+    const otherMarkets = [0.5, 1.5, 2.5, 3.5, 4.5].map(line =>
+      `<div>O/U ${line}: ${formatProbability(match[`over_${line}`])} / ${formatProbability(match[`under_${line}`])}</div>`
+    ).join('') +
+      `<div>BTTS: ${formatProbability(match.btts_yes)} / ${formatProbability(match.btts_no)}</div>`;
+    const competition = competitionNames[match.competition] || match.competition || '—';
+    const confidence = String(match.confidence || '—');
+    const confidenceClass = confidence.toLocaleLowerCase();
+    return `<tr>
+      <td><div>${escapeHtml(date)}</div><div class="fixture-meta">${escapeHtml(matchDate)}</div></td>
+      <td><span class="fixture-comp">${escapeHtml(competition)}</span></td>
+      <td class="fixture-teams">${escapeHtml(match.home_team)}<br><span class="fixture-meta">vs</span> ${escapeHtml(match.away_team)}</td>
+      <td><div class="probabilities">
+        <span class="prob-chip home" title="Victoria local">${formatProbability(match.prob_home)}</span>
+        <span class="prob-chip draw" title="Empate">${formatProbability(match.prob_draw)}</span>
+        <span class="prob-chip away" title="Victoria visitante">${formatProbability(match.prob_away)}</span>
+      </div></td>
+      <td>${formatProbability(match['over_2.5'])}</td>
+      <td>${formatProbability(match.btts_yes)}</td>
+      <td class="fixture-markets"><details><summary>Ver mercados</summary>${otherMarkets}</details></td>
+      <td>${formatGoals(match.lambda_home)} – ${formatGoals(match.lambda_away)}</td>
+      <td>${exactScores || '—'}</td>
+      <td><span class="confidence ${escapeHtml(confidenceClass)}">${escapeHtml(confidence)}</span>
+        <div class="fixture-meta">${escapeHtml(match.matches_sample ?? '—')} partidos</div></td>
+    </tr>`;
+  }).join('');
+
+  area.innerHTML = `<table class="fixtures-table">
+    <thead><tr><th>Fecha</th><th>Liga</th><th>Partido</th><th>1 · X · 2</th>
+      <th>Over 2.5</th><th>BTTS Sí</th><th>Otros mercados</th><th>xG local · visita</th>
+      <th>Marcadores probables</th><th>Confianza del modelo</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+async function loadPredictions() {
+  const badge = document.getElementById('status-badge');
+  try {
+    const response = await fetch('/api/predictions', {cache: 'no-store'});
+    if (!response.ok) throw new Error(`El servidor respondió ${response.status}.`);
+    dashboardPayload = await response.json();
+    renderFixtures(dashboardPayload);
+    badge.textContent = 'ACTUALIZADO';
+  } catch (error) {
+    console.error('No se pudieron cargar las predicciones:', error);
+    document.getElementById('fixtures-area').className = 'no-results';
+    document.getElementById('fixtures-area').textContent =
+      'No se pudieron cargar las predicciones. Inicia el dashboard con “python main.py --mode dashboard” y ábrelo desde la dirección local que muestra la terminal.';
+    badge.textContent = 'SIN CONEXIÓN';
+  }
 }
 
 // ── Poisson PMF ──────────────────────────────────────────────────────────────
@@ -577,6 +798,16 @@ function buildMatrix() {
 }
 
 // Init
+document.getElementById('fixture-search').addEventListener('input', () => {
+  if (dashboardPayload) renderFixtures(dashboardPayload);
+});
+document.getElementById('competition-filter').addEventListener('change', () => {
+  if (dashboardPayload) renderFixtures(dashboardPayload);
+});
+document.getElementById('date-filter').addEventListener('change', () => {
+  if (dashboardPayload) renderFixtures(dashboardPayload);
+});
+loadPredictions();
 analyze();
 buildMatrix();
 </script>

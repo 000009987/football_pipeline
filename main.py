@@ -17,13 +17,13 @@ import sys
 import json
 import pandas as pd
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 
 # Rutas
 ROOT = Path(__file__).parent
 sys.path.insert(0, str(ROOT))
 
-from config import LEAGUES, SEASONS, OUTPUT_CSV, OUTPUT_HTML
+from config import LEAGUES, SEASONS, OUTPUT_CSV, OUTPUT_JSON, OUTPUT_HTML
 from src.data_loader      import fetch_all_historical, fetch_all_upcoming
 from src.feature_engineering import enrich_fixture
 from src.models           import predict_match, estimate_rho
@@ -83,6 +83,28 @@ def get_rho(df: pd.DataFrame) -> float:
     return _RHO_CACHE
 
 
+def save_predictions(matches: list[dict], days_ahead: int) -> Path:
+    """Guarda la última tanda de predicciones para que el dashboard la consulte."""
+    output_path = Path(OUTPUT_JSON)
+    if not output_path.is_absolute():
+        output_path = ROOT / output_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    payload = {
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "days_ahead": days_ahead,
+        "count": len(matches),
+        "matches": matches,
+    }
+    temp_path = output_path.with_suffix(output_path.suffix + ".tmp")
+    temp_path.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    temp_path.replace(output_path)
+    return output_path
+
+
 # ── Modo: análisis de próximos partidos ───────────────────────────────────────
 
 def run_analyze(days_ahead: int = 7, manual_odds: dict = None):
@@ -102,7 +124,9 @@ def run_analyze(days_ahead: int = 7, manual_odds: dict = None):
 
     if fixtures.empty:
         print("No se encontraron fixtures próximos.")
-        return
+        output_path = save_predictions([], days_ahead)
+        print(f"Dashboard actualizado: {output_path}")
+        return pd.DataFrame()
 
     all_predictions = {}
     results = []
@@ -123,15 +147,22 @@ def run_analyze(days_ahead: int = 7, manual_odds: dict = None):
                 "away_team":   features["away_team"],
                 "lambda_home": features["lambda_home"],
                 "lambda_away": features["lambda_away"],
+                "confidence":  features["confianza"],
+                "matches_sample": features["n_partidos"],
+                "exact_scores": pred["exact_scores"],
                 **{k: v for k, v in pred.items()
                    if isinstance(v, (int, float)) and k != "model"},
             }
+            if "match_id" in fix:
+                row["match_id"] = int(fix["match_id"])
             results.append(row)
         except Exception as e:
             print(f"  Error en {fix.get('home_team','?')} vs "
                   f"{fix.get('away_team','?')}: {e}")
 
     df_preds = pd.DataFrame(results)
+    output_path = save_predictions(results, days_ahead)
+    print(f"\nPredicciones guardadas para el dashboard: {output_path}")
 
     # Mostrar predicciones
     print(f"\n{'='*70}")
@@ -278,8 +309,10 @@ def run_backtest_mode(competition: str = "PL"):
 def main():
     parser = argparse.ArgumentParser(description="Football Betting Pipeline")
     parser.add_argument("--mode",   default="analyze",
-                        choices=["analyze", "single", "backtest", "download"])
+                        choices=["analyze", "single", "backtest", "download",
+                                 "dashboard"])
     parser.add_argument("--days",   type=int, default=7)
+    parser.add_argument("--port",   type=int, default=8765)
     parser.add_argument("--home",   default="")
     parser.add_argument("--away",   default="")
     parser.add_argument("--comp",   default="PL")
@@ -301,6 +334,10 @@ def main():
 
     elif args.mode == "backtest":
         run_backtest_mode(args.comp)
+
+    elif args.mode == "dashboard":
+        from src.dashboard_server import serve_dashboard
+        serve_dashboard(port=args.port)
 
 
 if __name__ == "__main__":
