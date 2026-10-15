@@ -174,6 +174,17 @@ def main():
     print("  clv_pos_pct = % apuestas con CLV positivo. >50% => edge")
     print("  yield       = retorno simulado con stake plano (%)")
 
-
+    # ── Chequeo por temporada y confianza ─────────────────────────────
+    print("\n=== Desglose por temporada (umbral 5%) ===")
+    for market, prob_col, open_col, close_col, actual_col in markets:
+        if market not in ("1X2 Draw", "Under 2.5"):
+            continue
+        sub = preds.dropna(subset=[open_col, close_col, prob_col])
+        for season in sorted(sub["season"].unique()):
+            s = sub[sub["season"] == season]
+            r = evaluate_market(s, market, prob_col, open_col, close_col, actual_col, ev_threshold=0.05)
+            if r and r["n_bets"] > 0:
+                print(f"  {market:12s} {season}  n={r['n_bets']:4d}  "
+                      f"CLV={r['clv_mean']:+.3f}%  CLV+={r['clv_pos_pct']:.1f}%  yield={r['yield']:+.2f}%")
 if __name__ == "__main__":
     main()
