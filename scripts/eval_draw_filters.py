@@ -1,52 +1,46 @@
 import sys
 from pathlib import Path
 
-# Añadir la raíz del proyecto a sys.path
+# Añadir raíz al path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 import numpy as np
+from src.config import HISTORY_PARQUET, LEAGUES, DEFAULT_SEASONS, DEFAULT_RHO
 from src.evaluation import walk_forward_markets
+from src.evaluation_helpers import calculate_ev, calculate_profit, calculate_clv
+from src.logger import get_logger
+
+logger = get_logger("eval_draw_filters")
 
 def run_filter_analysis():
-    df = pd.read_parquet("data/processed/history_with_xg.parquet")
+    if not HISTORY_PARQUET.exists():
+        logger.error(f"Archivo no encontrado: {HISTORY_PARQUET}")
+        return
+
+    df = pd.read_parquet(HISTORY_PARQUET)
     
-    # Identificar nombres de columnas de cuotas de empate en el Parquet
     odds_draw_col = next((c for c in ["odds_draw", "odds_D", "PSD", "AvgD", "B365D"] if c in df.columns), None)
     odds_close_col = next((c for c in ["odds_draw_close", "odds_D_close", "PSCD", "AvgCD", "B365CD"] if c in df.columns), None)
     
-    print(f"Cuota apertura empate detectada: '{odds_draw_col}'")
-    print(f"Cuota cierre empate detectada:   '{odds_close_col}'")
-    
-    if odds_draw_col is None:
-        print("ERROR: No se encontró la columna de cuotas de empate en el archivo Parquet.")
-        return
-
-    seasons = sorted(df["season"].unique())
-    comp_col = "competition" if "competition" in df.columns else "league"
-    leagues = [l for l in df[comp_col].unique() if pd.notna(l) and l != 'CL']
-    
-    print(f"Temporadas: {seasons}")
-    print(f"Ligas a evaluar: {leagues}")
-    print("Ejecutando Walk-Forward global...")
+    logger.info(f"Cuota apertura empate: '{odds_draw_col}' | Cuota cierre empate: '{odds_close_col}'")
     
     all_preds = []
-    for league in leagues:
+    for league in LEAGUES:
         try:
-            preds = walk_forward_markets(df, seasons=seasons, competition=str(league), rho=-0.13)
+            preds = walk_forward_markets(df, seasons=DEFAULT_SEASONS, competition=str(league), rho=DEFAULT_RHO)
             if preds is not None and not preds.empty:
                 preds["league"] = league
                 all_preds.append(preds)
         except Exception as e:
-            print(f"Error procesando {league}: {e}")
+            logger.error(f"Error procesando {league}: {e}")
             
     if not all_preds:
-        print("No se obtuvieron predicciones.")
+        logger.warning("No se obtuvieron predicciones.")
         return
 
     data = pd.concat(all_preds, ignore_index=True)
     
-    # Normalizar tipos para evitar conflictos en la fusión (ej. int64 vs object en 'season')
     merge_keys = [k for k in ["season", "date", "home_team", "away_team"] if k in data.columns and k in df.columns]
     
     df_temp = df.copy()
@@ -55,30 +49,23 @@ def run_filter_analysis():
         df_temp[key] = df_temp[key].astype(str)
         
     odds_to_merge = [c for c in [odds_draw_col, odds_close_col] if c and c in df_temp.columns and c not in data.columns]
-    
     if odds_to_merge:
         data = data.merge(df_temp[merge_keys + odds_to_merge].drop_duplicates(), on=merge_keys, how="left")
         
-    # Calcular EV, Profit y CLV para el mercado de Empate (1X2 Draw)
     data["odds"] = data[odds_draw_col]
-    data["ev"] = (data["prob_D"] * data["odds"]) - 1.0
+    data["ev"] = calculate_ev(data["prob_D"], data["odds"])
     
-    # Calcular Profit (1 unidad por apuesta)
     is_draw = (data["actual_1x2"] == "D") if "actual_1x2" in data.columns else (data["home_goals"] == data["away_goals"])
-    data["profit"] = np.where(is_draw, data["odds"] - 1.0, -1.0)
+    data["profit"] = calculate_profit(is_draw, data["odds"])
     
-    # Calcular CLV si existe cuota de cierre
     if odds_close_col and odds_close_col in data.columns:
-        data["clv"] = (data["odds"] / data[odds_close_col]) - 1.0
+        data["clv"] = calculate_clv(data["odds"], data[odds_close_col])
     else:
         data["clv"] = np.nan
 
-    # Eliminar registros con cuota nula
     data = data.dropna(subset=["odds", "ev"]).copy()
 
-    print(f"\n=======================================================")
-    print(f" ANÁLISIS DE FILTROS EN 1X2 DRAW (Muestra útil: {len(data)} picks)")
-    print(f"=======================================================")
+    logger.info(f"Análisis sobre muestra de {len(data)} picks útiles.")
     
     ev_thresholds = [0.03, 0.05, 0.08, 0.10, 0.12]
     max_odds_limits = [None, 3.80, 3.60, 3.40]
@@ -87,7 +74,6 @@ def run_filter_analysis():
     for ev in ev_thresholds:
         for max_odds in max_odds_limits:
             subset = data[data["ev"] >= ev].copy()
-            
             if max_odds is not None:
                 subset = subset[subset["odds"] <= max_odds]
                 
@@ -110,9 +96,7 @@ def run_filter_analysis():
             
     df_res = pd.DataFrame(results)
     if not df_res.empty:
-        print(df_res.to_string(index=False))
-    else:
-        print("No se generaron combinaciones con suficiente muestra.")
+        print("\n" + df_res.to_string(index=False))
 
 if __name__ == "__main__":
     run_filter_analysis()
