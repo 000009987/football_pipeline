@@ -1,12 +1,12 @@
 import sys
 from pathlib import Path
 
-# Añadir raíz al path
+# Añadir la raíz al sys.path
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 import numpy as np
-from src.config import HISTORY_PARQUET, LEAGUES, DEFAULT_SEASONS, DEFAULT_RHO
+from src.config import HISTORY_PARQUET, EVAL_LEAGUES, DEFAULT_SEASONS, DEFAULT_RHO
 from src.evaluation import walk_forward_markets
 from src.evaluation_helpers import calculate_ev, calculate_profit, calculate_clv
 from src.logger import get_logger
@@ -26,7 +26,7 @@ def run_filter_analysis():
     logger.info(f"Cuota apertura empate: '{odds_draw_col}' | Cuota cierre empate: '{odds_close_col}'")
     
     all_preds = []
-    for league in LEAGUES:
+    for league in EVAL_LEAGUES:
         try:
             preds = walk_forward_markets(df, seasons=DEFAULT_SEASONS, competition=str(league), rho=DEFAULT_RHO)
             if preds is not None and not preds.empty:
@@ -65,7 +65,7 @@ def run_filter_analysis():
 
     data = data.dropna(subset=["odds", "ev"]).copy()
 
-    logger.info(f"Análisis sobre muestra de {len(data)} picks útiles.")
+    logger.info(f"Análisis sobre muestra útil de {len(data)} picks.")
     
     ev_thresholds = [0.03, 0.05, 0.08, 0.10, 0.12]
     max_odds_limits = [None, 3.80, 3.60, 3.40]
