@@ -30,4 +30,5 @@ data/raw/*.csv
 data/processed/
 data/output/
 reports/
-output/predictions.json*"output/value_bets.csv" 
+output/predictions.json
+output/value_bets.csv
