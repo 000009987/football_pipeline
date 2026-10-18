@@ -32,3 +32,4 @@ data/output/
 reports/
 output/predictions.json
 output/value_bets.csv
+output/alerts_history.csv 
