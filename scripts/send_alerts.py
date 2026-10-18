@@ -144,7 +144,8 @@ def run_draw_alerts(max_alerts: int = 5):
         all_alerts.append((row, "PICK"))
     for _, row in relaxed_df.iterrows():
         all_alerts.append((row, "INFO"))
-    all_alerts.sort(key=lambda x: x[0]["ev"], reverse=True)
+    # Prioridad: PICKs primero, luego INFOs; dentro de cada tier por EV desc
+    all_alerts.sort(key=lambda x: (0 if x[1] == "PICK" else 1, -x[0]["ev"]))
 
     alerts_to_send = all_alerts[:max_alerts]
     logger.info(
@@ -217,4 +218,4 @@ if __name__ == "__main__":
         ):
             logger.info("Mensaje de prueba enviado con éxito.")
     else:
-        run_draw_alerts(max_alerts=3)
+        run_draw_alerts(max_alerts=5)
