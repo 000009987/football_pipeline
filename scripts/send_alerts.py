@@ -1,12 +1,13 @@
 import sys
 from pathlib import Path
 
-# Añadir la raíz al sys.path
+# Añadir la raíz al sys.path ANTES de cualquier import de src
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import time
 import requests
 import pandas as pd
+
 from src.config import (
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
@@ -15,6 +16,7 @@ from src.config import (
     DRAW_FILTER_CONFIG,
     EVAL_LEAGUES,
     DEFAULT_RHO,
+    PRODUCTION_LEAGUES,
 )
 from src.evaluation import walk_forward_markets
 from src.evaluation_helpers import calculate_ev, apply_production_draw_filters
@@ -108,7 +110,7 @@ def run_draw_alerts(max_alerts: int = 5):
 
     if "date" in alerts_df.columns:
         alerts_df = alerts_df.sort_values(by="date", ascending=False)
-    
+
     alerts_to_send = alerts_df.head(max_alerts)
     logger.info(f"Enviando {len(alerts_to_send)} alertas a Telegram (límite: {max_alerts})...")
 
@@ -121,22 +123,28 @@ def run_draw_alerts(max_alerts: int = 5):
         ev = row.get("ev", 0.0) * 100
         date = str(row.get("date", "Por definir"))[:10]
 
-        # Formato claro y explícito del Pick
+        # ── Etiquetar según liga validada (PL/BL1) ─────────────────────
+        is_validated = league in PRODUCTION_LEAGUES
+        prefix = "📌 PICK" if is_validated else "ℹ️ INFO"
+        stake = "1 Unidad" if is_validated else "0 (solo informativo)"
+        tag = "✅ Liga validada (edge confirmado)" if is_validated else "⚠️ Liga sin edge validado — NO apostar"
+
         msg = (
             f"🎯 *ALERTA DE VALOR DE PRODUCCIÓN*\n\n"
             f"🏆 *Liga:* {league}\n"
             f"📅 *Fecha:* {date}\n"
             f"⚔️ *Partido:* {home} vs {away}\n"
-            f"📌 *PICK:* Empate (X)\n"
-            f"💰 *Stake Sugerido:* 1 Unidad\n\n"
+            f"*{prefix}:* Empate (X)\n"
+            f"💰 *Stake Sugerido:* {stake}\n\n"
             f"📊 *Prob. Modelo:* {prob_d:.1f}%\n"
             f"📈 *Cuota:* {odds:.2f}\n"
             f"💡 *EV Calculado:* +{ev:.1f}%\n\n"
-            f"⚠️ *Filtro:* EV ≥ {DRAW_FILTER_CONFIG['ev_min']*100:.0f}% | Cuota ≤ {DRAW_FILTER_CONFIG['max_odds']:.2f}"
+            f"⚙️ *Filtro:* EV ≥ {DRAW_FILTER_CONFIG['ev_min']*100:.0f}% | Cuota ≤ {DRAW_FILTER_CONFIG['max_odds']:.2f}\n"
+            f"🏷️ *{tag}*"
         )
 
         if send_telegram_message(msg):
-            logger.info(f"Alerta enviada: {home} vs {away}")
+            logger.info(f"Alerta enviada: {home} vs {away} ({league}) {'[VALIDADA]' if is_validated else '[INFO]'}")
             time.sleep(1)
 
 

@@ -107,6 +107,13 @@ DRAW_FILTER_CONFIG = {
     "market": "1X2 Draw"
 }
 
+# --- CONFIGURACIÓN DE PRODUCCIÓN ---
+# Ligas con edge validado en backtest (CLV y yield positivos).
+# PL: +19.9% yield | BL1: +18.9% yield | Resto: sin edge o negativo.
+# El bot sigue enviando alertas de todas las ligas, pero solo estas
+# se etiquetan como PICK con stake sugerido.
+PRODUCTION_LEAGUES = ["PL", "BL1"]
+
 # --- ODDS API ---
 ODDS_API_SPORT_KEYS = {
     "PL":  "soccer_epl",
