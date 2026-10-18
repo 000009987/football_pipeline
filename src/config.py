@@ -112,7 +112,7 @@ DRAW_FILTER_CONFIG = {
 # PL: +19.9% yield | BL1: +18.9% yield | Resto: sin edge o negativo.
 # El bot sigue enviando alertas de todas las ligas, pero solo estas
 # se etiquetan como PICK con stake sugerido.
-PRODUCTION_LEAGUES = ["PL", "BL1"]
+PRODUCTION_LEAGUES = EVAL_LEAGUES.copy()  # todas las ligas evaluadas
 
 # --- ODDS API ---
 ODDS_API_SPORT_KEYS = {

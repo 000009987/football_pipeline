@@ -30,3 +30,15 @@ def apply_production_draw_filters(df: pd.DataFrame) -> pd.DataFrame:
         f"Picks filtrados: {initial_len} -> {len(filtered_df)}"
     )
     return filtered_df
+
+def apply_relaxed_draw_filters(data: pd.DataFrame) -> pd.DataFrame:
+    """
+    Filtro relajado para paper trading: EV >= 8% y cuota <= 5.50.
+    Captura partidos con value alto pero cuota que el backtest marcó como negativa.
+    NO se usa para PICK; solo para INFO y tracking.
+    """
+    if data.empty:
+        return data
+    ev_min = DRAW_FILTER_CONFIG["ev_min"]
+    relaxed_max_odds = 5.50
+    return data[(data["ev"] >= ev_min) & (data["odds"] <= relaxed_max_odds)].copy()

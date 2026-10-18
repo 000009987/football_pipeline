@@ -1,7 +1,7 @@
 import sys
 from pathlib import Path
 
-# Añadir la raíz al sys.path ANTES de cualquier import de src
+# ── sys.path ANTES de cualquier import de src ────────────────────────
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import time
@@ -14,15 +14,23 @@ from src.config import (
     UPCOMING_PARQUET,
     HISTORY_PARQUET,
     DRAW_FILTER_CONFIG,
-    EVAL_LEAGUES,
     DEFAULT_RHO,
     PRODUCTION_LEAGUES,
 )
-from src.evaluation import walk_forward_markets
-from src.evaluation_helpers import calculate_ev, apply_production_draw_filters
+from src.feature_engineering import enrich_fixture
+from src.models import predict_match
+from src.evaluation_helpers import (
+    calculate_ev,
+    apply_production_draw_filters,
+    apply_relaxed_draw_filters,
+)
+from src.alerts_logger import log_alert
 from src.logger import get_logger
 
 logger = get_logger("send_alerts")
+
+# ─── Ligas con edge validado (solo aquí el tag dirá "VALIDADO") ──────
+VALIDATED_LEAGUES = ["PL", "BL1"]
 
 
 def send_telegram_message(message: str) -> bool:
@@ -37,7 +45,6 @@ def send_telegram_message(message: str) -> bool:
         "text": message,
         "parse_mode": "Markdown",
     }
-
     try:
         response = requests.post(url, json=payload, timeout=10)
         if response.status_code == 200:
@@ -49,85 +56,129 @@ def send_telegram_message(message: str) -> bool:
         return False
 
 
+def compute_live_predictions(
+    upcoming_df: pd.DataFrame,
+    history_df: pd.DataFrame,
+    rho: float,
+) -> pd.DataFrame:
+    """Calcula P(D) para cada partido futuro usando el histórico como train."""
+    rows = []
+    for _, row in upcoming_df.iterrows():
+        try:
+            f = enrich_fixture(row, history_df, as_of_date=row["date"])
+            p = predict_match(
+                f["lambda_home"], f["lambda_away"], rho=rho, model="dixon_coles"
+            )
+            rows.append({
+                "competition": row["competition"],
+                "date": row["date"],
+                "home_team": row["home_team"],
+                "away_team": row["away_team"],
+                "prob_D": p["prob_draw"],
+                "odds": row["odds_draw"],
+            })
+        except Exception as e:
+            logger.warning(
+                f"Error prediciendo {row.get('home_team')} vs "
+                f"{row.get('away_team')}: {e}"
+            )
+    return pd.DataFrame(rows)
+
+
 def run_draw_alerts(max_alerts: int = 5):
-    """Carga los partidos, genera predicciones y envía un máximo de alertas recientes."""
-    file_path = UPCOMING_PARQUET if UPCOMING_PARQUET.exists() else HISTORY_PARQUET
-    if not file_path.exists():
-        logger.error(f"No se encontró archivo de datos en {file_path}")
+    if not UPCOMING_PARQUET.exists():
+        logger.error(
+            f"No existe {UPCOMING_PARQUET}. "
+            f"Ejecuta `python scripts/fetch_upcoming.py` primero."
+        )
+        return
+    if not HISTORY_PARQUET.exists():
+        logger.error(f"No existe {HISTORY_PARQUET}. No hay histórico para entrenar.")
         return
 
-    logger.info(f"Cargando partidos desde: {file_path.name}")
-    df = pd.read_parquet(file_path)
+    logger.info(f"Cargando fixtures desde: {UPCOMING_PARQUET.name}")
+    upcoming = pd.read_parquet(UPCOMING_PARQUET)
+    logger.info(f"Cargando histórico desde: {HISTORY_PARQUET.name}")
+    history = pd.read_parquet(HISTORY_PARQUET)
 
-    odds_col = next((c for c in ["odds_draw", "odds_D", "PSD", "AvgD", "B365D"] if c in df.columns), None)
-    if not odds_col:
-        logger.error("No se encontró la columna de cuota de empate.")
+    if upcoming.empty:
+        logger.warning("Sin partidos futuros.")
+        return
+    if upcoming["odds_draw"].isna().all():
+        logger.warning("Ningún partido tiene cuota de empate.")
         return
 
-    if "prob_D" not in df.columns and "prob_draw" not in df.columns:
-        logger.info("Calculando probabilidades del modelo con Walk-Forward...")
-        seasons = sorted(df["season"].unique()) if "season" in df.columns else [2025]
-        comp_col = "competition" if "competition" in df.columns else "league"
-        leagues = [l for l in df[comp_col].unique() if pd.notna(l) and l in EVAL_LEAGUES] if comp_col in df.columns else EVAL_LEAGUES
+    logger.info(f"Calculando predicciones live ({len(upcoming)} partidos)...")
+    data = compute_live_predictions(upcoming, history, rho=DEFAULT_RHO)
 
-        all_preds = []
-        for league in leagues:
-            try:
-                preds = walk_forward_markets(df, seasons=seasons, competition=str(league), rho=DEFAULT_RHO)
-                if preds is not None and not preds.empty:
-                    preds["league"] = league
-                    all_preds.append(preds)
-            except Exception as e:
-                logger.error(f"Error prediciendo ligas {league}: {e}")
+    if data.empty:
+        logger.warning("No se pudo predecir ningún partido.")
+        return
 
-        if not all_preds:
-            logger.warning("No se pudieron generar predicciones.")
-            return
-
-        preds_df = pd.concat(all_preds, ignore_index=True)
-        merge_keys = [k for k in ["season", "date", "home_team", "away_team"] if k in preds_df.columns and k in df.columns]
-        df_temp = df.copy()
-        for key in merge_keys:
-            preds_df[key] = preds_df[key].astype(str)
-            df_temp[key] = df_temp[key].astype(str)
-
-        data = preds_df.merge(df_temp[merge_keys + [odds_col]].drop_duplicates(), on=merge_keys, how="left") if odds_col not in preds_df.columns else preds_df
-    else:
-        data = df.copy()
-        if "prob_draw" in data.columns and "prob_D" not in data.columns:
-            data["prob_D"] = data["prob_draw"]
-
-    data["odds"] = data[odds_col]
     data["ev"] = calculate_ev(data["prob_D"], data["odds"])
-    data = data.dropna(subset=["ev", "odds"]).copy()
+    data = data.dropna(subset=["ev", "odds", "prob_D"]).copy()
+    logger.info(f"Predicciones válidas: {len(data)}")
 
-    # Aplicar filtro de producción
-    alerts_df = apply_production_draw_filters(data)
+    # ── Filtro ESTRICTO (PICK) ───────────────────────────────────────
+    picks_df = apply_production_draw_filters(data)
+    logger.info(f"PICKs (EV>=8%, odds<=3.80): {len(picks_df)}")
 
-    if alerts_df.empty:
-        logger.info("No hay partidos que cumplan el criterio de alerta.")
+    # ── Filtro RELAJADO (INFO) ───────────────────────────────────────
+    relaxed_df = apply_relaxed_draw_filters(data)
+    if not picks_df.empty and not relaxed_df.empty:
+        pick_keys = set(zip(picks_df["home_team"], picks_df["away_team"]))
+        relaxed_df = relaxed_df[
+            ~relaxed_df.apply(
+                lambda r: (r["home_team"], r["away_team"]) in pick_keys, axis=1
+            )
+        ]
+    logger.info(f"INFOs (EV>=8%, odds<=5.50): {len(relaxed_df)}")
+
+    if picks_df.empty and relaxed_df.empty:
+        logger.info("Sin alertas hoy: ningún partido con EV alto y cuota razonable.")
         return
 
-    if "date" in alerts_df.columns:
-        alerts_df = alerts_df.sort_values(by="date", ascending=False)
+    # ── Combinar y ordenar por EV descendente ────────────────────────
+    all_alerts = []
+    for _, row in picks_df.iterrows():
+        all_alerts.append((row, "PICK"))
+    for _, row in relaxed_df.iterrows():
+        all_alerts.append((row, "INFO"))
+    all_alerts.sort(key=lambda x: x[0]["ev"], reverse=True)
 
-    alerts_to_send = alerts_df.head(max_alerts)
-    logger.info(f"Enviando {len(alerts_to_send)} alertas a Telegram (límite: {max_alerts})...")
+    alerts_to_send = all_alerts[:max_alerts]
+    logger.info(
+        f"Enviando {len(alerts_to_send)} alertas a Telegram "
+        f"(límite: {max_alerts})..."
+    )
 
-    for _, row in alerts_to_send.iterrows():
-        league = row.get("league", row.get("competition", "N/A"))
+    for row, tier in alerts_to_send:
+        league = row.get("competition", "N/A")
         home = row.get("home_team", "Local")
         away = row.get("away_team", "Visitante")
-        prob_d = row.get("prob_D", 0.0) * 100
-        odds = row.get("odds", 0.0)
-        ev = row.get("ev", 0.0) * 100
+        prob_d = row["prob_D"] * 100
+        odds = row["odds"]
+        ev = row["ev"] * 100
         date = str(row.get("date", "Por definir"))[:10]
 
-        # ── Etiquetar según liga validada (PL/BL1) ─────────────────────
-        is_validated = league in PRODUCTION_LEAGUES
-        prefix = "📌 PICK" if is_validated else "ℹ️ INFO"
-        stake = "1 Unidad" if is_validated else "0 (solo informativo)"
-        tag = "✅ Liga validada (edge confirmado)" if is_validated else "⚠️ Liga sin edge validado — NO apostar"
+        is_pick = (tier == "PICK")
+        is_validated = league in VALIDATED_LEAGUES
+
+        if is_pick and is_validated:
+            prefix = "📌 PICK VALIDADO"
+            stake = "1 Unidad"
+            tag = f"✅ Liga {league} validada (edge confirmado)"
+        elif is_pick:
+            prefix = "📌 PICK (sin validar)"
+            stake = "1 Unidad"
+            tag = f"⚠️ Liga {league} sin edge validado — backtest negativo"
+        else:
+            prefix = "🔍 INFO (cuota alta)"
+            stake = "0 (solo track)"
+            tag = (
+                f"⚠️ Cuota {odds:.2f} > 3.80 — backtest no respalda, "
+                "solo registro"
+            )
 
         msg = (
             f"🎯 *ALERTA DE VALOR DE PRODUCCIÓN*\n\n"
@@ -139,19 +190,31 @@ def run_draw_alerts(max_alerts: int = 5):
             f"📊 *Prob. Modelo:* {prob_d:.1f}%\n"
             f"📈 *Cuota:* {odds:.2f}\n"
             f"💡 *EV Calculado:* +{ev:.1f}%\n\n"
-            f"⚙️ *Filtro:* EV ≥ {DRAW_FILTER_CONFIG['ev_min']*100:.0f}% | Cuota ≤ {DRAW_FILTER_CONFIG['max_odds']:.2f}\n"
             f"🏷️ *{tag}*"
         )
 
         if send_telegram_message(msg):
-            logger.info(f"Alerta enviada: {home} vs {away} ({league}) {'[VALIDADA]' if is_validated else '[INFO]'}")
+            logger.info(f"Alerta enviada: {home} vs {away} ({league}) [{tier}]")
+            log_alert({
+                "competition": league,
+                "match_date": date,
+                "home_team": home,
+                "away_team": away,
+                "prob_D": row["prob_D"],
+                "odds_open": odds,
+                "ev": row["ev"],
+                "tier": tier,
+                "is_validated": int(is_validated),
+            })
             time.sleep(1)
 
 
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "--test":
         logger.info("Enviando mensaje de prueba a Telegram...")
-        if send_telegram_message("🤖 *Bot 1X2 Draw*: Conexión activa y lista para emitir señales."):
+        if send_telegram_message(
+            "🤖 *Bot 1X2 Draw*: Conexión activa y lista para emitir señales."
+        ):
             logger.info("Mensaje de prueba enviado con éxito.")
     else:
         run_draw_alerts(max_alerts=3)
