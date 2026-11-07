@@ -37,3 +37,4 @@ auditoria_modelos.txt
 estructura.txt 
 output/coverage_*.csv 
 output/coverage_*.txt 
+data/processed/*.bak 
