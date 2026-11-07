@@ -154,7 +154,7 @@ def estimate_rho(df_matches) -> float:
         return ll
 
     res = minimize(neg_log_likelihood, x0=[-0.13],
-                   bounds=[(-0.5, 0.0)], method="L-BFGS-B")
+                   bounds=[(-0.5, 0.3)], method="L-BFGS-B")
     return float(res.x[0]) if res.success else -0.13
 
 

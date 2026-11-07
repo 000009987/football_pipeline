@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from src.config import (
     DRAW_FILTER_CONFIG,
     DEFAULT_RHO,
     PRODUCTION_LEAGUES,
+    OUTPUT_DIR,
 )
 from src.feature_engineering import enrich_fixture
 from src.models import predict_match
@@ -24,7 +26,7 @@ from src.evaluation_helpers import (
     apply_production_draw_filters,
     apply_relaxed_draw_filters,
 )
-from src.alerts_logger import log_alert
+from src.alerts_logger import log_alert, ALERTS_LOG
 from src.logger import get_logger
 
 logger = get_logger("send_alerts")
@@ -32,6 +34,11 @@ logger = get_logger("send_alerts")
 # ─── Ligas con edge validado (solo aquí el tag dirá "VALIDADO") ──────
 VALIDATED_LEAGUES = ["PL", "BL1"]
 
+# ─── Caché de rho por liga (generado por compute_league_rho.py) ──────
+RHO_CACHE = OUTPUT_DIR / "rho_cache.json"
+
+
+# ─── Telegram ────────────────────────────────────────────────────────
 
 def send_telegram_message(message: str) -> bool:
     """Envía un mensaje formateado a Telegram."""
@@ -56,21 +63,60 @@ def send_telegram_message(message: str) -> bool:
         return False
 
 
+# ─── Rho por liga (walk-forward con caché) ──────────────────────────
+
+def load_rho_cache() -> dict:
+    """Carga el caché de rho por liga. Si no existe, devuelve {}."""
+    if not RHO_CACHE.exists():
+        logger.warning(
+            f"No existe {RHO_CACHE}. Usando DEFAULT_RHO={DEFAULT_RHO} para todas las ligas."
+        )
+        return {}
+    try:
+        with RHO_CACHE.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        leagues = data.get("leagues", {})
+        logger.info(
+            f"rho cache cargado: {len(leagues)} ligas "
+            f"(generado {data.get('generated_at', 'N/A')})"
+        )
+        return leagues
+    except Exception as e:
+        logger.error(f"Error cargando {RHO_CACHE}: {e}")
+        return {}
+
+
+def get_rho_for_league(league: str, cache: dict) -> float:
+    """Devuelve rho para una liga, o DEFAULT_RHO si no está en caché."""
+    if league in cache:
+        return float(cache[league]["rho"])
+    return DEFAULT_RHO
+
+
+# ─── Predicciones live ──────────────────────────────────────────────
+
 def compute_live_predictions(
     upcoming_df: pd.DataFrame,
     history_df: pd.DataFrame,
-    rho: float,
+    rho_cache: dict,
 ) -> pd.DataFrame:
-    """Calcula P(D) para cada partido futuro usando el histórico como train."""
+    """
+    Calcula P(D) para cada partido futuro usando el histórico como train.
+
+    El rho se selecciona por liga desde el caché. Si una liga no está en el
+    caché, se usa DEFAULT_RHO.
+    """
     rows = []
     for _, row in upcoming_df.iterrows():
+        league = row.get("competition", "")
+        rho = get_rho_for_league(league, rho_cache)
         try:
             f = enrich_fixture(row, history_df, as_of_date=row["date"])
             p = predict_match(
                 f["lambda_home"], f["lambda_away"], rho=rho, model="dixon_coles"
             )
             rows.append({
-                "competition": row["competition"],
+                "competition": league,
                 "date": row["date"],
                 "home_team": row["home_team"],
                 "away_team": row["away_team"],
@@ -84,6 +130,8 @@ def compute_live_predictions(
             )
     return pd.DataFrame(rows)
 
+
+# ─── Pipeline principal ─────────────────────────────────────────────
 
 def run_draw_alerts(max_alerts: int = 5):
     if not UPCOMING_PARQUET.exists():
@@ -108,8 +156,17 @@ def run_draw_alerts(max_alerts: int = 5):
         logger.warning("Ningún partido tiene cuota de empate.")
         return
 
+    # Cargar caché de rho una sola vez
+    rho_cache = load_rho_cache()
+    if rho_cache:
+        for liga, info in rho_cache.items():
+            logger.info(
+                f"  rho[{liga}] = {info['rho']:+.4f} "
+                f"(n={info['n_matches']}, status={info['status']})"
+            )
+
     logger.info(f"Calculando predicciones live ({len(upcoming)} partidos)...")
-    data = compute_live_predictions(upcoming, history, rho=DEFAULT_RHO)
+    data = compute_live_predictions(upcoming, history, rho_cache)
 
     if data.empty:
         logger.warning("No se pudo predecir ningún partido.")
@@ -161,9 +218,8 @@ def run_draw_alerts(max_alerts: int = 5):
         odds = row["odds"]
         ev = row["ev"] * 100
         date = str(row.get("date", "Por definir"))[:10]
-        
+
         # ── Comprobar duplicado ─────────────────────────────────────
-        from src.alerts_logger import ALERTS_LOG
         if ALERTS_LOG.exists():
             _existing = pd.read_csv(ALERTS_LOG)
             _dup = _existing[
