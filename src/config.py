@@ -57,6 +57,15 @@ EVAL_LEAGUES = ["FL1", "PL", "PD", "PPL", "DED", "BL1", "SA"]
 DEFAULT_SEASONS = [2023, 2024, 2025]
 
 EXTRA_LEAGUES_CSV = {
+     # ── Temporada ACTUAL 2026-27 ─────────────────────────────────────
+    "PL_2627":  "https://www.football-data.co.uk/mmz4281/2627/E0.csv",
+    "PD_2627":  "https://www.football-data.co.uk/mmz4281/2627/SP1.csv",
+    "BL1_2627": "https://www.football-data.co.uk/mmz4281/2627/D1.csv",
+    "FL1_2627": "https://www.football-data.co.uk/mmz4281/2627/F1.csv",
+    "SA_2627":  "https://www.football-data.co.uk/mmz4281/2627/I1.csv",
+    "DED_2627": "https://www.football-data.co.uk/mmz4281/2627/N1.csv",
+    "PPL_2627": "https://www.football-data.co.uk/mmz4281/2627/P1.csv",
+    
     "PL_2526":  "https://www.football-data.co.uk/mmz4281/2526/E0.csv",
     "PD_2526":  "https://www.football-data.co.uk/mmz4281/2526/SP1.csv",
     "BL1_2526": "https://www.football-data.co.uk/mmz4281/2526/D1.csv",

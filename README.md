@@ -60,7 +60,7 @@ Primera ejecución descarga ~3 temporadas de cada liga. Tarda ~5-10 minutos por 
 
 ```bash
 python main.py --mode analyze
-python main.py --mode analyze --days 3
+python main.py --mode analyze --days 1
 ```
 
 El comando analiza en una sola ejecución todos los fixtures disponibles de las ligas configuradas y guarda sus probabilidades en `output/predictions.json`.

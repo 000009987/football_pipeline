@@ -161,6 +161,19 @@ def run_draw_alerts(max_alerts: int = 5):
         odds = row["odds"]
         ev = row["ev"] * 100
         date = str(row.get("date", "Por definir"))[:10]
+        
+        # ── Comprobar duplicado ─────────────────────────────────────
+        from src.alerts_logger import ALERTS_LOG
+        if ALERTS_LOG.exists():
+            _existing = pd.read_csv(ALERTS_LOG)
+            _dup = _existing[
+                (_existing["home_team"] == home)
+                & (_existing["away_team"] == away)
+                & (_existing["match_date"] == date)
+            ]
+            if len(_dup) > 0:
+                logger.info(f"Saltando duplicado: {home} vs {away} ({date})")
+                continue
 
         is_pick = (tier == "PICK")
         is_validated = league in VALIDATED_LEAGUES

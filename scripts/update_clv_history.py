@@ -111,18 +111,34 @@ def main():
         is_draw = int(row["home_goals"] == row["away_goals"])
         result = "W" if is_draw else "L"
 
-        # Cuota de cierre: preferir AvgCD, fallback AvgD
-        odds_close_val = row.get("AvgCD") if pd.notna(row.get("AvgCD")) else row.get("AvgD")
+        # ── Cuota de cierre: Pinnacle (PSCD) para comparabilidad ──
+        # odds_open viene de The Odds API (Pinnacle). Para que el CLV sea
+        # comparable, el cierre debe ser también Pinnacle.
+        odds_close_psc = row.get("PSCD")
+        odds_close_avg = row.get("AvgCD")
 
-        # PnL con stake 1 unidad
+        # Prioridad: PSCD (Pinnacle). Fallback: AvgCD (marcado como no comparable)
+        if pd.notna(odds_close_psc) and odds_close_psc > 0:
+            odds_close_val = odds_close_psc
+            clv_comparable = True  # Pinnacle vs Pinnacle → CLV válido
+        elif pd.notna(odds_close_avg) and odds_close_avg > 0:
+            odds_close_val = odds_close_avg
+            clv_comparable = False  # Pinnacle vs Avg → CLV NO comparable
+        else:
+            odds_close_val = None
+            clv_comparable = False
+
+        # PnL con stake 1 unidad (usa odds_open real, lo que apostaste)
         pnl = (float(alert["odds_open"]) - 1) if is_draw else -1.0
 
-        # CLV: (odds_open / odds_close - 1) * 100
+        # CLV: solo calcular si los bookmakers son comparables
         clv_pct = None
-        if pd.notna(odds_close_val) and odds_close_val > 0:
+        if clv_comparable and odds_close_val is not None and odds_close_val > 0:
             clv_pct = (float(alert["odds_open"]) / float(odds_close_val) - 1) * 100
+        # Si no es comparable, dejamos clv_pct = None (vacío en CSV)
+        # Así el análisis no se contamina con CLV falso
 
-        alerts.at[idx, "odds_close"] = odds_close_val if pd.notna(odds_close_val) else ""
+        alerts.at[idx, "odds_close"] = odds_close_val if odds_close_val is not None else ""
         alerts.at[idx, "result"] = result
         alerts.at[idx, "clv_pct"] = round(clv_pct, 3) if clv_pct is not None else ""
         alerts.at[idx, "pnl"] = round(pnl, 3)
