@@ -216,6 +216,7 @@ def run_draw_alerts(max_alerts: int = 5):
                 "away_team": away,
                 "prob_D": row["prob_D"],
                 "odds_open": odds,
+                "odds_source": "Pinnacle",
                 "ev": row["ev"],
                 "tier": tier,
                 "is_validated": int(is_validated),
