@@ -9,7 +9,7 @@ import pandas as pd
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from config import DECAY_FACTOR, RECENT_MATCHES, HOME_ADVANTAGE
+from src.config import DECAY_FACTOR, RECENT_MATCHES, HOME_ADVANTAGE
 
 # ── Normalización de nombres de equipos ───────────────────────────────────────
 # Mapea nombres cortos de CSVs al nombre largo de la API
