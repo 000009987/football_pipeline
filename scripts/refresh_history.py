@@ -1,6 +1,16 @@
 """
-Refresca el histórico con partidos jugados desde la última fecha.
-Ejecutar diariamente junto con fetch_upcoming.py.
+Refresca el histórico RAW con partidos jugados desde la última fecha.
+
+ARQUITECTURA:
+  - history.parquet           (raw football-data.co.uk)    ← este script actualiza
+  - history_with_xg.parquet   (raw + xG)                   ← enrich_history_with_xg.py lo genera
+
+Flujo diario (daily_run.py):
+  1. refresh_history.py         ← este script (actualiza history.parquet)
+  2. enrich_history_with_xg.py  (regenera history_with_xg.parquet)
+  3. fetch_upcoming.py          (cuotas nuevas)
+  4. update_clv_history.py      (resultados + CLV)
+  5. send_alerts.py             (alertas)
 
 Uso: python scripts/refresh_history.py
 """
@@ -9,51 +19,129 @@ from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
+import io
+
 import pandas as pd
-from datetime import datetime, timedelta
-from src.config import EXTRA_LEAGUES_CSV
+import requests
+
+from src.config import EXTRA_LEAGUES_CSV, PROCESSED_DATA_DIR
 from src.logger import get_logger
 
 logger = get_logger("refresh_history")
 
-HISTORY_PARQUET = Path(__file__).resolve().parent.parent / "data" / "processed" / "history_with_xg.parquet"
+RAW_HISTORY_PARQUET = PROCESSED_DATA_DIR / "history.parquet"
 
 
-def main():
-    import requests
-    import io
+def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Elimina BOM y espacios de los nombres de columnas."""
+    df = df.copy()
+    df.columns = [
+        c.replace("ï»¿", "").replace("\ufeff", "").strip()
+        for c in df.columns
+    ]
+    return df
 
-    history = pd.read_parquet(HISTORY_PARQUET)
-    history["date"] = pd.to_datetime(history["date"]).dt.tz_localize(None)
-    last_date = history["date"].max()
-    logger.info(f"Histórico actual termina en: {last_date.date()}")
 
-    # Descargar CSVs actuales de football-data.co.uk
-    new_frames = []
+def fetch_current_season_csvs() -> pd.DataFrame:
+    """Descarga y unifica los CSVs de la temporada 2026-27."""
+    frames = []
     for key, url in EXTRA_LEAGUES_CSV.items():
         if "2627" not in key:
-            continue  # solo temporada actual
+            continue
         try:
-            r = requests.get(url, timeout=15)
+            r = requests.get(url, timeout=20)
             if r.status_code != 200:
                 logger.warning(f"[{key}] HTTP {r.status_code}")
                 continue
-            df = pd.read_csv(io.StringIO(r.text), encoding="latin1")
-            new_frames.append((key, df))
-            logger.info(f"[{key}] {len(df)} partidos descargados")
+            df = _normalize_columns(pd.read_csv(io.StringIO(r.text), encoding="latin1"))
+
+            league = key.split("_")[0]
+            season_str = key.split("_")[1]
+            df["competition"] = league
+            df["season"] = int("20" + season_str[:2])
+            frames.append(df)
+            logger.info(f"[{key}] {len(df)} filas descargadas")
         except Exception as e:
             logger.error(f"[{key}] Error: {e}")
 
-    if not new_frames:
-        logger.warning("Sin datos nuevos")
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def transform_csv_to_internal(df: pd.DataFrame) -> pd.DataFrame:
+    """Transforma CSVs al esquema interno de history.parquet."""
+    df = df.copy()
+
+    df["date"] = pd.to_datetime(df.get("Date"), dayfirst=True, errors="coerce")
+    df["home_team"] = df.get("HomeTeam")
+    df["away_team"] = df.get("AwayTeam")
+    df["home_goals"] = pd.to_numeric(df.get("FTHG"), errors="coerce")
+    df["away_goals"] = pd.to_numeric(df.get("FTAG"), errors="coerce")
+    df["total_goals"] = df["home_goals"] + df["away_goals"]
+    df["status"] = "FINISHED"
+    if "match_id" not in df.columns:
+        df["match_id"] = None
+
+    df = df.dropna(subset=["date", "home_goals", "away_goals"]).copy()
+    df["home_goals"] = df["home_goals"].astype(int)
+    df["away_goals"] = df["away_goals"].astype(int)
+    df["total_goals"] = df["total_goals"].astype(int)
+
+    return df
+
+
+def main():
+    if not RAW_HISTORY_PARQUET.exists():
+        logger.error(
+            f"No existe {RAW_HISTORY_PARQUET}. "
+            f"Ejecuta 'python main.py --mode download' primero."
+        )
         return
 
-    # El resto del procesamiento depende de cómo cargues normalmente.
-    # Simplificación: guardar de vuelta a history_with_xg.parquet
-    # (necesitas replicar la lógica de main.py --mode download aquí)
+    logger.info(f"Cargando {RAW_HISTORY_PARQUET.name}")
+    history = _normalize_columns(pd.read_parquet(RAW_HISTORY_PARQUET))
+    history["date"] = pd.to_datetime(history["date"]).dt.tz_localize(None)
 
-    logger.info("Recomendación: ejecuta 'python main.py --mode download' + 'enrich_history_with_xg.py' diariamente")
-    logger.info("O programa la tarea: refresh_history.py → fetch_upcoming.py → send_alerts.py")
+    last_date = history["date"].max()
+    n_before = len(history)
+    logger.info(f"Histórico actual: {n_before} partidos, hasta {last_date.date()}")
+
+    logger.info("Descargando CSVs de la temporada 2026-27...")
+    current_raw = fetch_current_season_csvs()
+    if current_raw.empty:
+        logger.warning("No se descargó ningún CSV")
+        return
+
+    logger.info("Transformando CSVs al esquema interno...")
+    current = transform_csv_to_internal(current_raw)
+    logger.info(f"Partidos con resultado en CSVs: {len(current)}")
+
+    new_matches = current[current["date"] > last_date].copy()
+    logger.info(f"Partidos nuevos (> {last_date.date()}): {len(new_matches)}")
+
+    if new_matches.empty:
+        logger.info("El histórico está al día. No hay partidos nuevos.")
+        return
+
+    combined = pd.concat([history, new_matches], ignore_index=True, sort=False)
+    combined = combined.sort_values("date").reset_index(drop=True)
+
+    before = len(combined)
+    combined = combined.drop_duplicates(
+        subset=["date", "home_team", "away_team"], keep="last"
+    ).reset_index(drop=True)
+    removed = before - len(combined)
+    if removed > 0:
+        logger.info(f"Eliminados {removed} duplicados")
+
+    n_after = len(combined)
+    combined.to_parquet(RAW_HISTORY_PARQUET, index=False)
+
+    logger.info(f"Guardado: {RAW_HISTORY_PARQUET}")
+    logger.info(f"Histórico: {n_before} -> {n_after} partidos (+{n_after - n_before})")
+    logger.info(f"Rango: {combined['date'].min().date()} -> {combined['date'].max().date()}")
+    logger.info("Siguiente paso: python scripts/enrich_history_with_xg.py")
 
 
 if __name__ == "__main__":

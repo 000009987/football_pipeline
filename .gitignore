@@ -35,3 +35,5 @@ output/value_bets.csv
 output/alerts_history.csv 
 auditoria_modelos.txt 
 estructura.txt 
+output/coverage_*.csv 
+output/coverage_*.txt 
