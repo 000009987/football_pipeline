@@ -15,7 +15,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-MAX_GOALS = 7   # matriz hasta 7x7
+MAX_GOALS = 10  # matriz 11x11. P(X>10) < 0.01% con lambda<=4 (evita sesgo de truncacion)
 
 
 # ── Corrección Dixon-Coles ─────────────────────────────────────────────────────

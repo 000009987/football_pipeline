@@ -215,3 +215,9 @@ git checkout dev-fase1
 REM 6. Verificar
 git log --oneline -6
 git branch
+
+Para producción (send_alerts.py): sigue usando rho_cache.json (últimos 300 partidos). Es lo más razonable para predecir partidos futuros, porque refleja la forma reciente.
+
+Para backtest (baseline_clean.py): ahora es honesto (sin leakage), aunque la inestabilidad introduce ruido.
+
+Para Fase 2: si LightGBM usa rho como feature, la inestabilidad debe tratarse (ej. rho promedio de las últimas 2 temporadas, no de la temporada test).

@@ -60,7 +60,7 @@ def test_rho_zero_equals_poisson():
     """
     Con rho=0, Dixon-Coles debe ser idéntico a Poisson independiente.
 
-    Ambas matrices normalizan sobre la misma truncación (MAX_GOALS=7),
+        Ambas matrices normalizan sobre la misma truncación (MAX_GOALS=10),
     por lo que deben coincidir con tolerancia de floating point.
     """
     lh, la = 1.5, 1.2
