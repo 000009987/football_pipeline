@@ -42,8 +42,9 @@ def score_matrix_poisson(lambda_home: float, lambda_away: float) -> np.ndarray:
     goals = np.arange(MAX_GOALS + 1)
     ph    = poisson.pmf(goals, lambda_home)
     pa    = poisson.pmf(goals, lambda_away)
-    return np.outer(ph, pa)
-
+    matrix = np.outer(ph, pa)
+    matrix /= matrix.sum()
+    return matrix
 
 def score_matrix_dixon_coles(lambda_home: float, lambda_away: float,
                               rho: float = -0.13) -> np.ndarray:
