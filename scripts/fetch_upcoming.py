@@ -20,7 +20,7 @@ import argparse
 import unicodedata
 import requests
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.config import (
     API_KEY,
@@ -36,9 +36,6 @@ from src.logger import get_logger
 logger = get_logger("fetch_upcoming")
 
 # Palabras que no distinguen equipos
-_STOPWORDS = {"fc", "cf", "afc", "sc", "ac", "and", "de", "the", "club", "cd", "ud"}
-
-
 _STOPWORDS = {
     "fc", "cf", "afc", "sc", "ac", "and", "de", "the", "club", "cd", "ud",
     "sv", "fsv", "tsg", "vfb", "vfl", "bsc", "spvgg", "1899", "07", "04", "05",
@@ -84,6 +81,7 @@ def _teams_match(team_a: str, team_b: str) -> bool:
         return True
     return False
 
+
 def fetch_fixtures(competition_code: str) -> list:
     url = f"{BASE_URL}/competitions/{competition_code}/matches"
     headers = {"X-Auth-Token": API_KEY}
@@ -119,33 +117,46 @@ def fetch_odds(sport_key: str) -> list:
 
 
 def extract_draw_odds(odds_data: list, home_team: str, away_team: str, commence_iso: str):
-    """Devuelve la cuota de empate o None. Usa fuzzy matching de equipos y fecha (±2h)."""
-    for match in odds_data:
+    """
+    Devuelve un dict con la cuota de empate y su procedencia, o None.
+
+    Dict devuelto:
+      - price: cuota decimal
+      - bookmaker_key: key del bookmaker (ej. "pinnacle", "bet365")
+      - market: "h2h"
+      - capture_timestamp: ISO UTC de captura (ahora)
+    """
+    for event in odds_data:
         try:
-            m_time = datetime.fromisoformat(match["commence_time"].replace("Z", "+00:00"))
+            m_time = datetime.fromisoformat(event["commence_time"].replace("Z", "+00:00"))
             f_time = datetime.fromisoformat(commence_iso.replace("Z", "+00:00"))
             if abs((m_time - f_time).total_seconds()) > 7200:
                 continue
         except Exception:
             continue
 
-        if not _teams_match(home_team, match.get("home_team", "")):
+        if not _teams_match(home_team, event.get("home_team", "")):
             continue
-        if not _teams_match(away_team, match.get("away_team", "")):
+        if not _teams_match(away_team, event.get("away_team", "")):
             continue
 
         # Preferir Pinnacle, luego el primero disponible
         bookmakers = sorted(
-            match.get("bookmakers", []),
+            event.get("bookmakers", []),
             key=lambda b: 0 if b.get("key") == "pinnacle" else 1,
         )
         for bm in bookmakers:
-            for market in bm.get("markets", []):
-                if market.get("key") != "h2h":
+            for mkt in bm.get("markets", []):
+                if mkt.get("key") != "h2h":
                     continue
-                for outcome in market.get("outcomes", []):
+                for outcome in mkt.get("outcomes", []):
                     if outcome.get("name", "").lower() == "draw":
-                        return float(outcome["price"])
+                        return {
+                            "price": float(outcome["price"]),
+                            "bookmaker_key": bm.get("key", "unknown"),
+                            "market": mkt.get("key", "h2h"),
+                            "capture_timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                        }
     return None
 
 
@@ -174,9 +185,9 @@ def main():
             utc_date = m.get("utcDate")
             home = m.get("homeTeam", {}).get("name", "?")
             away = m.get("awayTeam", {}).get("name", "?")
-            draw_odds = extract_draw_odds(odds, home, away, utc_date) if odds else None
+            draw_meta = extract_draw_odds(odds, home, away, utc_date) if odds else None
 
-            if draw_odds is None:
+            if draw_meta is None:
                 continue  # descartar sin cuota
 
             matched += 1
@@ -186,7 +197,10 @@ def main():
                 "home_team": home,
                 "away_team": away,
                 "status": m.get("status"),
-                "odds_draw": draw_odds,
+                "odds_draw": draw_meta["price"],
+                "bookmaker_key": draw_meta["bookmaker_key"],
+                "market": draw_meta["market"],
+                "capture_timestamp": draw_meta["capture_timestamp"],
                 "season": str(datetime.now().year),
             })
 
@@ -203,6 +217,12 @@ def main():
     UPCOMING_PARQUET.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(UPCOMING_PARQUET, index=False)
     logger.info(f"Guardado: {UPCOMING_PARQUET} ({len(df)} partidos con cuota)")
+
+    # Distribución por bookmaker (transparencia)
+    if "bookmaker_key" in df.columns:
+        bm_counts = df["bookmaker_key"].value_counts().to_dict()
+        logger.info(f"Bookmakers: {bm_counts}")
+
     logger.info(f"Rango: {df['date'].min()} → {df['date'].max()}")
 
 

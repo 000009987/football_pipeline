@@ -40,8 +40,14 @@ RHO_CACHE = OUTPUT_DIR / "rho_cache.json"
 
 # ─── Telegram ────────────────────────────────────────────────────────
 
-def send_telegram_message(message: str) -> bool:
-    """Envía un mensaje formateado a Telegram."""
+def send_telegram_message(message: str, max_retries: int = 3) -> bool:
+    """
+    Envía un mensaje formateado a Telegram con retry y backoff exponencial.
+
+    - Timeout 20s (vs 10s antes) para redes lentas.
+    - 3 reintentos con backoff 2s → 4s → 8s.
+    - Reintenta solo en errores transitorios (timeout, 429, 5xx).
+    """
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         logger.error("Credenciales de Telegram no configuradas en .env")
         return False
@@ -52,15 +58,39 @@ def send_telegram_message(message: str) -> bool:
         "text": message,
         "parse_mode": "Markdown",
     }
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        if response.status_code == 200:
-            return True
-        logger.error(f"Error de Telegram API ({response.status_code}): {response.text}")
-        return False
-    except Exception as e:
-        logger.error(f"Excepción al conectar con Telegram: {e}")
-        return False
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = requests.post(url, json=payload, timeout=20)
+            if response.status_code == 200:
+                return True
+            # 429 = rate limit; 5xx = error servidor Telegram
+            if response.status_code in (429, 500, 502, 503, 504) and attempt < max_retries:
+                wait = 2 ** attempt  # 2, 4, 8s
+                logger.warning(
+                    f"Telegram {response.status_code} (intento {attempt}/{max_retries}). "
+                    f"Reintentando en {wait}s..."
+                )
+                time.sleep(wait)
+                continue
+            logger.error(f"Error de Telegram API ({response.status_code}): {response.text[:200]}")
+            return False
+        except requests.exceptions.Timeout:
+            if attempt < max_retries:
+                wait = 2 ** attempt
+                logger.warning(
+                    f"Telegram timeout (intento {attempt}/{max_retries}). "
+                    f"Reintentando en {wait}s..."
+                )
+                time.sleep(wait)
+                continue
+            logger.error(f"Telegram timeout tras {max_retries} intentos")
+            return False
+        except Exception as e:
+            logger.error(f"Excepción al conectar con Telegram: {e}")
+            return False
+
+    return False
 
 
 # ─── Rho por liga (walk-forward con caché) ──────────────────────────
@@ -105,6 +135,9 @@ def compute_live_predictions(
 
     El rho se selecciona por liga desde el caché. Si una liga no está en el
     caché, se usa DEFAULT_RHO.
+
+    Propaga bookmaker_key, market y capture_timestamp desde upcoming_fixtures
+    para que log_alert() pueda registrar la procedencia real de la cuota.
     """
     rows = []
     for _, row in upcoming_df.iterrows():
@@ -122,6 +155,9 @@ def compute_live_predictions(
                 "away_team": row["away_team"],
                 "prob_D": p["prob_draw"],
                 "odds": row["odds_draw"],
+                "bookmaker_key": row.get("bookmaker_key", "unknown"),
+                "market": row.get("market", "h2h"),
+                "capture_timestamp": row.get("capture_timestamp", ""),
             })
         except Exception as e:
             logger.warning(
@@ -149,12 +185,26 @@ def run_draw_alerts(max_alerts: int = 5):
     logger.info(f"Cargando histórico desde: {HISTORY_PARQUET.name}")
     history = pd.read_parquet(HISTORY_PARQUET)
 
+    # ── Normalizar fechas a naive UTC (consistencia con baseline_clean) ──
+    # history_with_xg.parquet está como datetime64[ns, UTC] desde Fase 1.
+    # upcoming_fixtures.parquet está como datetime64[ns] (naive UTC).
+    # enrich_fixture compara as_of_date con history["date"], así que ambos
+    # deben estar en el mismo formato para evitar:
+    #   "Invalid comparison between dtype=datetime64[ns, UTC] and Timestamp"
+    history["date"] = pd.to_datetime(history["date"]).dt.tz_localize(None)
+    upcoming["date"] = pd.to_datetime(upcoming["date"]).dt.tz_localize(None)
+
     if upcoming.empty:
         logger.warning("Sin partidos futuros.")
         return
     if upcoming["odds_draw"].isna().all():
         logger.warning("Ningún partido tiene cuota de empate.")
         return
+
+    # Distribución de bookmakers (transparencia)
+    if "bookmaker_key" in upcoming.columns:
+        bm_dist = upcoming["bookmaker_key"].value_counts().to_dict()
+        logger.info(f"Bookmakers en upcoming: {bm_dist}")
 
     # Cargar caché de rho una sola vez
     rho_cache = load_rho_cache()
@@ -218,6 +268,9 @@ def run_draw_alerts(max_alerts: int = 5):
         odds = row["odds"]
         ev = row["ev"] * 100
         date = str(row.get("date", "Por definir"))[:10]
+        bookmaker = row.get("bookmaker_key", "unknown")
+        market = row.get("market", "h2h")
+        capture_ts = row.get("capture_timestamp", "")
 
         # ── Comprobar duplicado ─────────────────────────────────────
         if ALERTS_LOG.exists():
@@ -259,25 +312,44 @@ def run_draw_alerts(max_alerts: int = 5):
             f"💰 *Stake Sugerido:* {stake}\n\n"
             f"📊 *Prob. Modelo:* {prob_d:.1f}%\n"
             f"📈 *Cuota:* {odds:.2f}\n"
-            f"💡 *EV Calculado:* +{ev:.1f}%\n\n"
+            f"💡 *EV Calculado:* +{ev:.1f}%\n"
+            f"🏦 *Bookmaker:* {bookmaker}\n\n"
             f"🏷️ *{tag}*"
         )
 
-        if send_telegram_message(msg):
-            logger.info(f"Alerta enviada: {home} vs {away} ({league}) [{tier}]")
-            log_alert({
-                "competition": league,
-                "match_date": date,
-                "home_team": home,
-                "away_team": away,
-                "prob_D": row["prob_D"],
-                "odds_open": odds,
-                "odds_source": "Pinnacle",
-                "ev": row["ev"],
-                "tier": tier,
-                "is_validated": int(is_validated),
-            })
-            time.sleep(1)
+        # ── Enviar a Telegram con retry interno (3 intentos, backoff 2/4/8s)
+        telegram_ok = send_telegram_message(msg)
+        if telegram_ok:
+            logger.info(
+                f"Alerta enviada: {home} vs {away} ({league}) "
+                f"[{tier}] [{bookmaker}]"
+            )
+        else:
+            logger.warning(
+                f"Alerta NO enviada a Telegram (registrada igualmente): "
+                f"{home} vs {away} ({league}) [{tier}] [{bookmaker}]"
+            )
+
+        # ── Registrar SIEMPRE en alerts_history.csv (paper trading honesto)
+        # Aunque Telegram falle, la alerta se acumula para el análisis de Fase 3.
+        log_alert({
+            "competition": league,
+            "match_date": date,
+            "home_team": home,
+            "away_team": away,
+            "prob_D": row["prob_D"],
+            "odds_open": odds,
+            "odds_source": bookmaker,
+            "market": market,
+            "capture_timestamp": capture_ts,
+            "ev": row["ev"],
+            "tier": tier,
+            "is_validated": int(is_validated),
+        })
+
+        # ── Sleep más largo entre mensajes (2s) para evitar rate limiting.
+        # Telegram permite ~1 msg/seg por chat, pero bots nuevos necesitan margen.
+        time.sleep(2)
 
 
 if __name__ == "__main__":
