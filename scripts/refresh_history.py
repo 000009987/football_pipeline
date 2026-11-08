@@ -25,6 +25,7 @@ import pandas as pd
 import requests
 
 from src.config import EXTRA_LEAGUES_CSV, PROCESSED_DATA_DIR
+from src.ids import apply_match_id
 from src.logger import get_logger
 
 logger = get_logger("refresh_history")
@@ -80,8 +81,9 @@ def transform_csv_to_internal(df: pd.DataFrame) -> pd.DataFrame:
     df["away_goals"] = pd.to_numeric(df.get("FTAG"), errors="coerce")
     df["total_goals"] = df["home_goals"] + df["away_goals"]
     df["status"] = "FINISHED"
-    if "match_id" not in df.columns:
-        df["match_id"] = None
+    # match_id NO se asigna aquí: apply_match_id se encarga al final,
+    # después de filtrar filas sin datos válidos, para no generar IDs
+    # de partidos descartados.
 
     df = df.dropna(subset=["date", "home_goals", "away_goals"]).copy()
     df["home_goals"] = df["home_goals"].astype(int)
@@ -134,6 +136,19 @@ def main():
     removed = before - len(combined)
     if removed > 0:
         logger.info(f"Eliminados {removed} duplicados")
+
+    # Generar match_id para partidos nuevos (determinístico, sin nulos)
+    n_nulls_before = (
+        combined["match_id"].isna().sum()
+        if "match_id" in combined.columns
+        else len(combined)
+    )
+    combined = apply_match_id(combined)
+    n_nulls_after = combined["match_id"].isna().sum()
+    logger.info(
+        f"match_id generados: {n_nulls_before - n_nulls_after} "
+        f"({n_nulls_after} nulos restantes)"
+    )
 
     n_after = len(combined)
     combined.to_parquet(RAW_HISTORY_PARQUET, index=False)
