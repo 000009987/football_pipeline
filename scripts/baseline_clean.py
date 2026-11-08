@@ -239,10 +239,43 @@ def compute_metrics(preds):
                 row[f"logloss_{model}"] = log_loss_multiclass(y, probs)
                 row[f"acc_{model}"] = (probs.argmax(axis=1) == y).mean()
                 row[f"n_{model}"] = len(probs)
+                ci = bootstrap_ci(y, probs, n_boot=500)  # 500 para no tardar demasiado
+                row[f"brier_{model}_lo"] = ci["brier_lo"]
+                row[f"brier_{model}_hi"] = ci["brier_hi"]
+                row[f"logloss_{model}_lo"] = ci["logloss_lo"]
+                row[f"logloss_{model}_hi"] = ci["logloss_hi"]
 
         out.append(row)
     return pd.DataFrame(out)
 
+def bootstrap_ci(y_idx, probs, n_boot=1000, alpha=0.05):
+    """
+    Calcula IC95% para Brier y LogLoss via bootstrap.
+    Devuelve dict con brier_ci, logloss_ci (lower, upper) y medianas.
+    """
+    rng = np.random.default_rng(42)
+    n = len(y_idx)
+    briers, loglosses = [], []
+
+    for _ in range(n_boot):
+        idx = rng.integers(0, n, n)
+        y_b = y_idx[idx]
+        p_b = probs[idx]
+        briers.append(brier_multiclass(y_b, p_b))
+        loglosses.append(log_loss_multiclass(y_b, p_b))
+
+    briers = np.array(briers)
+    loglosses = np.array(loglosses)
+    lo, hi = alpha / 2 * 100, (1 - alpha / 2) * 100
+
+    return {
+        "brier_mean": float(np.mean(briers)),
+        "brier_lo": float(np.percentile(briers, lo)),
+        "brier_hi": float(np.percentile(briers, hi)),
+        "logloss_mean": float(np.mean(loglosses)),
+        "logloss_lo": float(np.percentile(loglosses, lo)),
+        "logloss_hi": float(np.percentile(loglosses, hi)),
+    }
 
 # ─── Main ───────────────────────────────────────────────────────────
 
