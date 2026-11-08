@@ -47,17 +47,55 @@ Este baseline es el **punto de partida oficial de Fase 2 (LightGBM)**.
 
 Ver `output/baseline_clean_metrics_20261107.csv` para la tabla completa.
 
-### Resumen por liga (agregado)
+### Resumen por liga (agregado, sin IC)
 
 | Liga | n   | Brier(DC) | Brier(Poisson) | Brier(Mercado) | Gap vs Mercado |
 | ---- | --- | --------- | -------------- | -------------- | -------------- |
-| BL1  | 378 | 0.1976    | 0.1977         | 0.1904         | +0.0072        |
-| DED  | 405 | 0.2016    | 0.2021         | 0.1953         | +0.0063        |
-| FL1  | 387 | 0.2032    | 0.2030         | 0.1927         | +0.0105        |
-| PD   | 489 | 0.1971    | 0.1971         | 0.1873         | +0.0098        |
-| PL   | 470 | 0.2105    | 0.2110         | 0.2037         | +0.0068        |
-| PPL  | 396 | 0.1907    | 0.1902         | 0.1814         | +0.0093        |
-| SA   | 480 | 0.2002    | 0.2003         | 0.1913         | +0.0089        |
+| BL1  | 378 | 0.1975    | 0.1976         | 0.1904         | +0.0071        |
+| DED  | 405 | 0.2020    | 0.2022         | 0.1953         | +0.0067        |
+| FL1  | 387 | 0.2032    | 0.2032         | 0.1927         | +0.0105        |
+| PD   | 489 | 0.1973    | 0.1972         | 0.1873         | +0.0100        |
+| PL   | 470 | 0.2111    | 0.2111         | 0.2037         | +0.0074        |
+| PPL  | 396 | 0.1903    | 0.1902         | 0.1814         | +0.0089        |
+| SA   | 480 | 0.2001    | 0.2001         | 0.1913         | +0.0088        |
+
+### IC95% por bootstrap (500 resamples)
+
+| Liga/Temp | Brier DC [IC95%]        | Brier Mercado [IC95%]   | ¿Se solapan? |
+| --------- | ----------------------- | ----------------------- | ------------ |
+| BL1 2025  | 0.1980 [0.1876, 0.2083] | 0.1874 [0.1751, 0.1995] | ✅ Sí        |
+| BL1 2026  | 0.1954 [0.1744, 0.2194] | 0.2019 [0.1741, 0.2311] | ✅ Sí        |
+| DED 2025  | 0.1997 [0.1857, 0.2131] | 0.1934 [0.1806, 0.2071] | ✅ Sí        |
+| DED 2026  | 0.2093 [0.1912, 0.2273] | 0.2022 [0.1794, 0.2263] | ✅ Sí        |
+| FL1 2025  | 0.2056 [0.1966, 0.2141] | 0.1933 [0.1824, 0.2036] | ✅ Sí        |
+| FL1 2026  | 0.1941 [0.1754, 0.2114] | 0.1904 [0.1697, 0.2106] | ✅ Sí        |
+| PD 2025   | 0.1973 [0.1890, 0.2057] | 0.1903 [0.1817, 0.1994] | ✅ Sí        |
+| PD 2026   | 0.1973 [0.1807, 0.2143] | 0.1806 [0.1597, 0.1997] | ✅ Sí        |
+| PL 2025   | 0.2115 [0.2032, 0.2193] | 0.2038 [0.1930, 0.2144] | ✅ Sí        |
+| PL 2026   | 0.2093 [0.1952, 0.2230] | 0.2036 [0.1837, 0.2241] | ✅ Sí        |
+| PPL 2025  | 0.1903 [0.1787, 0.1999] | 0.1799 [0.1668, 0.1918] | ✅ Sí        |
+| PPL 2026  | 0.1903 [0.1693, 0.2137] | 0.1862 [0.1610, 0.2124] | ✅ Sí        |
+| SA 2025   | 0.2056 [0.1967, 0.2137] | 0.1948 [0.1853, 0.2059] | ✅ Sí        |
+| SA 2026   | 0.1791 [0.1621, 0.1965] | 0.1732 [0.1543, 0.1961] | ✅ Sí        |
+
+### Conclusión clave (revisada con IC95%)
+
+**El mercado tiene mejor Brier puntual en 13/14 combinaciones liga/temporada (gap medio +0.008), pero los IC95% se solapan en TODAS las combinaciones.**
+
+**Interpretación estadística:**
+
+- Con n=72-380 partidos por combinación, **no hay evidencia suficiente para afirmar que el mercado bate a DC**.
+- Tampoco hay evidencia de que DC bata al mercado.
+- **Ambos están dentro del ruido estadístico** con los datos actuales.
+
+**Implicación para Fase 2:**
+
+- LightGBM **no parte en desventaja**: no es que "DC no tiene edge, LightGBM difícilmente lo tendrá". Es que **no podemos concluir nada con n pequeño**.
+- La comparación DC vs LightGBM debe hacerse con IC95%, no solo con Brier puntual.
+- Si LightGBM bate a DC por <0.002 en Brier, la diferencia será ruido (los IC95% se solaparán).
+- Criterio de Gate 2: LightGBM debe batir a DC por un margen que **no se solape con los IC95%** de DC.
+
+**DC ≈ Poisson en 1X2.** Esto sí es robusto (la corrección `rho` aporta poco en 1X2, independientemente del IC).
 
 ### Conclusión clave
 
@@ -153,7 +191,7 @@ pytest -v
 
 **Añade al final de `docs/data_contract.md`:**
 
-```markdown
+````markdown
 ---
 
 ## 9. Parámetros del modelo Dixon-Coles (Fase 1)
@@ -221,3 +259,5 @@ Para producción (send_alerts.py): sigue usando rho_cache.json (últimos 300 par
 Para backtest (baseline_clean.py): ahora es honesto (sin leakage), aunque la inestabilidad introduce ruido.
 
 Para Fase 2: si LightGBM usa rho como feature, la inestabilidad debe tratarse (ej. rho promedio de las últimas 2 temporadas, no de la temporada test).
+```
+````
