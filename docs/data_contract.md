@@ -188,22 +188,27 @@ python scripts/data_coverage_report.py
 
 # 6. Limitaciones aceptadas
 
-L1: xG 2026-27 no disponible
-Problema: los ficheros xg\_\*.csv de Understat solo llegan hasta mayo 2026. Los partidos de agosto-noviembre 2026 tienen xG = NaN.
+### L1: xG 2026-27 no disponible
 
-Intentos de arreglo (2026-11-07):
+**Problema:** los ficheros `xg_*.csv` de Understat solo llegan hasta mayo 2026. Los partidos de agosto-noviembre 2026 tienen xG = NaN.
 
-Librería understat (pip, v0.1.14, 2022) → falla con JSONDecodeError (Understat cambió su HTML/JSON).
+**Intentos de arreglo (2026-11-07):**
 
-Scraping manual → descartado (mantenimiento perpetuo, fragilidad alta).
+- Librería `understat` (pip, v0.1.14, 2022) → falla con `JSONDecodeError` (Understat cambió su HTML/JSON).
+- Scraping manual → descartado (mantenimiento perpetuo, fragilidad alta).
 
-Impacto:
+**Intentos adicionales (2026-11-14):**
 
-Fase 1 (Dixon-Coles): ninguno — DC usa goles, no xG.
+- **FBref + soccerdata:** probado con `requests.get('https://fbref.com/en/comps/9/schedule/Premier-League-Scores-and-Fixtures')` con UA simple y con UA completo de Chrome 130. Ambos devuelven **HTTP 403** (Cloudflare). FBref bloquea scrapers activamente. Descartado el 2026-11-14.
 
-Fase 2 (LightGBM): moderado — LightGBM usará xG hasta 2025 + goles + Elo + forma para 2026.
+**Conclusión definitiva:** no hay fuente gratuita y estable de xG fresco para 2026-27. Se acepta la limitación. Workaround en Fase 2: xG hasta 2025 + goles + Elo + forma + descanso.
 
-Decisión: aceptar limitación. Documentar. Si aparece fuente fiable en el futuro, añadir.
+**Impacto:**
+
+- **Fase 1 (Dixon-Coles):** ninguno — DC usa goles, no xG.
+- **Fase 2 (LightGBM):** moderado — LightGBM usará xG hasta 2025 + goles + Elo + forma para 2026.
+
+**Decisión:** aceptar limitación. Documentar. Si aparece fuente fiable en el futuro, añadir.
 
 L2: PSCD (Pinnacle close) no disponible para 2026-27
 Problema: football-data.co.uk no publica PSCD para la temporada 2026-27 (2190 de 8111 partidos sin PSCD).
@@ -266,8 +271,6 @@ INFO: alerta que cumple EV ≥ 8% AND cuota ≤ 5.50 pero no es PICK.
 rho: parámetro de Dixon-Coles (correlación de marcadores bajos).
 
 CLV: Closing Line Value — movimiento de cuota a favor.
-
-# 10. Semantica de fechas
 
 ---
 
