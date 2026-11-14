@@ -144,7 +144,8 @@ def compute_live_predictions(
         league = row.get("competition", "")
         rho = get_rho_for_league(league, rho_cache)
         try:
-            f = enrich_fixture(row, history_df, as_of_date=row["date"])
+            history_league = history_df[history_df["competition"] == league]
+            f = enrich_fixture(row, history_league, as_of_date=row["date"])
             p = predict_match(
                 f["lambda_home"], f["lambda_away"], rho=rho, model="dixon_coles"
             )

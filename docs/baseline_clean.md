@@ -268,29 +268,7 @@ Para Fase 2: si LightGBM usa rho como feature, la inestabilidad debe tratarse (e
 
 **Hipótesis del audit independiente:** `weight=12` en `regress()` regresiona agresivamente los ratings a la media. Con `n=3`, el rating es solo 20% propio + 80% media. Esto podría estar "colapsando" los lambdas y explicando por qué DC ≈ Poisson en 1X2.
 
-**Test:** grid search de `regress_weight ∈ {4, 6, 8, 12, 16}` sobre walk-forward 2025+2026 en las 7 ligas (3005 partidos).
-
-**Resultado:**
-
-| weight | Brier      | Δ vs 12  |
-| ------ | ---------- | -------- |
-| 4      | 0.2003     | -0.0000  |
-| 6      | 0.2001     | -0.0002  |
-| 8      | 0.2001     | -0.0002  |
-| **12** | **0.2003** | baseline |
-| 16     | 0.2007     | +0.0004  |
-
-**Δ Brier máximo: 0.0004** (1/12 del umbral de señal real >0.005).
-
-**Conclusión:** `regress_weight` **no tiene impacto en Brier**. La hipótesis del audit era falsa. `DC ≈ Poisson` en 1X2 **es una característica real del modelo**, no un artefacto del peso de regresión.
-
-**Implicación para Fase 2:** LightGBM debe batir a DC por un margen >0.005 con IC95% no solapados. Si no lo hace, el edge no existe con estas features. `weight=12` es el default óptimo confirmado.
-
-**Código reproducible:** `scripts/grid_search_weight.py`.
-
-### 11.1 Repetición con `rho` walk-forward (2026-11-14)
-
-El grid search original usaba `rho_cache.json` (estimado con los últimos 300 partidos, incluyendo 2025-26 → leakage conceptual). Se repitió con `rho` estimado walk-forward por liga/temporada (misma metodología que `baseline_clean.py`, sin leakage).
+**Test:** grid search de `regress_weight ∈ {4, 6, 8, 12, 16}` sobre walk-forward 2025+2026 en las 7 ligas (3005 partidos), con `rho` estimado solo con el train de cada liga/temporada. El primer grid usó el cache actual de `rho` y queda reemplazado por esta repetición sin leakage.
 
 **Resultado con `rho` walk-forward:**
 
@@ -302,18 +280,20 @@ El grid search original usaba `rho_cache.json` (estimado con los últimos 300 pa
 | **12** | **0.2004** | baseline |
 | 16     | 0.2008     | +0.0004  |
 
-**Δ Brier máximo: 0.0004.** Idéntico al grid original. La conclusión se mantiene: `weight` no tiene impacto en Brier.
+**Δ Brier máximo: 0.0004.**
 
-**Nota sobre agregaciones:** el Brier agregado del grid (0.2004) difiere del Brier de `baseline_clean_metrics.csv` (0.1988) porque son dos agregaciones distintas. `baseline_clean.py` calcula media de medias (14 filas, cada liga/temporada pesa igual). El grid calcula Brier global sobre las 3005 predicciones (ligas con más partidos pesan más). Ambas agregaciones son válidas; la diferencia no es un bug.
+**Conclusión:** No se observó mejora grande con otros weights (Δ Brier < 0.001). Sin IC pareados, no se puede afirmar ausencia total de efecto. Estos resultados no demuestran que un weight concreto sea óptimo ni que `DC ≈ Poisson` sea una propiedad universal del modelo.
 
-### 11.2 Fix adicional: `.mode()` con `past` (2026-11-14)
-
-`compute_ratings_for_team` usaba `.mode()` sobre `df` (histórico completo) en vez de `past` (filtrado por `as_of_date`) para inferir la competición del equipo. Corregido a `past` en líneas 333/335 de `src/feature_engineering.py`.
-
-**Impacto en el baseline:** <0.0005. Todos los equipos de las 7 ligas domésticas juegan solo su liga en el parquet, así que `.mode()` devolvía el mismo valor con `df` que con `past`. El fix es correcto conceptualmente y previene leakage si en el futuro se añaden Championship o CL al parquet.
+**Nota sobre agregaciones:** el Brier agregado del grid (0.2004) difiere del Brier de `baseline_clean_metrics.csv` (0.1988) porque son dos agregaciones distintas. `baseline_clean.py` calcula la media de las 14 medias por liga/temporada; el grid calcula el Brier global sobre las 3005 predicciones, por lo que las ligas con más partidos pesan más.
 
 ### 11.2 Fix adicional: `.mode()` con `past` (2026-11-14)
 
-`compute_ratings_for_team` usaba `.mode()` sobre `df` (histórico completo) en vez de `past` (filtrado por `as_of_date`) para inferir la competición del equipo. Corregido a `past` en líneas 333/335 de `src/feature_engineering.py`.
+`compute_ratings_for_team` usaba `.mode()` sobre `df` (histórico completo) en vez de `past` (filtrado por `as_of_date`) para inferir la competición del equipo. Se corrigió para usar `past`, evitando que partidos posteriores influyan en esa inferencia. Este cambio por sí solo no filtraba los partidos usados en los ratings por competición; el filtro de producción se describe en §11.3.
 
-**Impacto en el baseline:** <0.0005. Todos los equipos de las 7 ligas domésticas juegan solo su liga en el parquet, así que `.mode()` devolvía el mismo valor con `df` que con `past`. El fix es correcto conceptualmente y previene leakage si en el futuro se añaden Championship o CL al parquet.
+### 11.3 Alineación baseline↔producción por competición (2026-11-14)
+
+`send_alerts.py` ahora filtra el histórico por la competición del fixture antes de llamar a `enrich_fixture`, igual que el baseline limita el histórico a la liga evaluada. Esto evita mezclar, por ejemplo, partidos de Champions League con los de la liga doméstica al calcular ratings de producción. La alineación descrita aquí es por ámbito de competición; las ventanas de entrenamiento y la estimación de `rho` siguen siendo distintas entre el baseline y la predicción live.
+
+El `output/alerts_history.csv` actual contiene 25 alertas, con fechas entre el 18 de octubre y el 8 de noviembre de 2026. Todas son anteriores a este fix y deben tratarse como **pre-fix**: sus ratings se calcularon con el histórico multicompetición. El cambio no recalcula ni modifica esas predicciones históricas.
+
+**Código:** `scripts/send_alerts.py`, función `compute_live_predictions`.
