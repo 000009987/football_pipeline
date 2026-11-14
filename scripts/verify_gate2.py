@@ -1,13 +1,15 @@
 """
 Verificación del Gate 2 de Fase 2 (Cuotas, EV y Liquidación).
 
-Comprueba 6 condiciones:
+Comprueba 8 condiciones:
   1. src/markets.py existe y exporta las 4 funciones de liquidación.
   2. tests/test_settlement.py existe con >= 20 tests.
   3. FIELDS incluye odds_source, stake, clv_source.
   4. determine_clv_source existe en evaluation_helpers.
   5. update_clv_history.py escribe clv_source.
   6. alerts_history.csv (si existe) tiene las 19 columnas de FIELDS.
+  7. calculate_pnl respeta el stake (B2.7).
+  8. determine_clv_source verifica la fuente de apertura (B2.8).
 """
 import sys
 from pathlib import Path
@@ -65,15 +67,13 @@ def check_4_determine_clv_source():
     logger.info("Check 4: determine_clv_source importable")
     try:
         from src.evaluation_helpers import determine_clv_source
-        # Sanity check
+        # Sanity check con 3 args (B2.8)
         assert determine_clv_source(2.5, 2.6, "pinnacle") == ("Pinnacle", True)
-        assert determine_clv_source(2.5, 2.6, "bet365") == ("Pinnacle", False)
         assert determine_clv_source(None, 2.6, "avg") == ("Avg", True)
-        assert determine_clv_source(None, 2.6, "pinnacle") == ("Avg", False)
         assert determine_clv_source(None, None, "") == ("", False)
     except Exception as e:
         return False, f"error: {e}"
-    return True, "importable y funcional"
+    return True, "importable y funcional (3 args)"
 
 
 def check_5_update_clv_writes_clv_source():
@@ -100,6 +100,60 @@ def check_6_alerts_csv_columns():
     return True, f"{len(df.columns)} columnas == FIELDS"
 
 
+def check_7_calculate_pnl():
+    """B2.7: calculate_pnl respeta el stake."""
+    logger.info("Check 7: calculate_pnl respeta stake")
+    try:
+        from src.evaluation_helpers import calculate_pnl
+    except ImportError:
+        return False, "calculate_pnl no importable (B2.7 no aplicado)"
+
+    # Caso 1: PICK stake=1.0, win → pnl = odds-1
+    if abs(calculate_pnl(2.5, 1.0, True) - 1.5) > 1e-6:
+        return False, "PICK win con stake=1.0 no da pnl=1.5"
+
+    # Caso 2: INFO stake=0.0, win → pnl = 0
+    if abs(calculate_pnl(2.5, 0.0, True)) > 1e-6:
+        return False, "INFO win con stake=0.0 no da pnl=0"
+
+    # Caso 3: Kelly stake=0.06, win → pnl = 0.06*(odds-1)
+    if abs(calculate_pnl(2.5, 0.06, True) - 0.09) > 1e-6:
+        return False, "Kelly win con stake=0.06 no da pnl=0.09"
+
+    # Caso 4: Kelly stake=0.06, loss → pnl = -0.06
+    if abs(calculate_pnl(2.5, 0.06, False) - (-0.06)) > 1e-6:
+        return False, "Kelly loss con stake=0.06 no da pnl=-0.06"
+
+    return True, "4/4 casos (PICK, INFO, Kelly win, Kelly loss)"
+
+
+def check_8_clv_source_verification():
+    """B2.8: determine_clv_source verifica fuente de apertura."""
+    logger.info("Check 8: determine_clv_source verifica fuente de apertura")
+    try:
+        from src.evaluation_helpers import determine_clv_source
+    except ImportError:
+        return False, "determine_clv_source no importable"
+
+    # Caso 1: Pinnacle open + PSCD close → comparable
+    if determine_clv_source(2.5, None, "pinnacle") != ("Pinnacle", True):
+        return False, "Pinnacle open + PSCD close debería ser (Pinnacle, True)"
+
+    # Caso 2: Bet365 open + PSCD close → NO comparable
+    if determine_clv_source(2.5, None, "bet365") != ("Pinnacle", False):
+        return False, "Bet365 open + PSCD close debería ser (Pinnacle, False)"
+
+    # Caso 3: Avg open + AvgCD close → comparable
+    if determine_clv_source(None, 2.6, "avg") != ("Avg", True):
+        return False, "Avg open + AvgCD close debería ser (Avg, True)"
+
+    # Caso 4: Pinnacle open + AvgCD close → NO comparable
+    if determine_clv_source(None, 2.6, "pinnacle") != ("Avg", False):
+        return False, "Pinnacle open + AvgCD close debería ser (Avg, False)"
+
+    return True, "4/4 casos (Pinnacle-Pinnacle, Bet365-Pinnacle, Avg-Avg, Pinnacle-Avg)"
+
+
 def main():
     logger.info("=" * 60)
     logger.info("VERIFICACIÓN GATE 2")
@@ -109,9 +163,11 @@ def main():
         ("1. markets.py con 4 funciones", check_1_markets_module),
         ("2. tests liquidación >= 20", check_2_settlement_tests),
         ("3. FIELDS con odds_source/stake/clv_source", check_3_fields),
-        ("4. determine_clv_source", check_4_determine_clv_source),
+        ("4. determine_clv_source importable", check_4_determine_clv_source),
         ("5. update_clv escribe clv_source", check_5_update_clv_writes_clv_source),
         ("6. alerts_history.csv con 19 cols", check_6_alerts_csv_columns),
+        ("7. calculate_pnl respeta stake", check_7_calculate_pnl),
+        ("8. determine_clv_source verifica fuente", check_8_clv_source_verification),
     ]
 
     passed = 0
