@@ -2,6 +2,13 @@ import json
 import os
 import sys
 from pathlib import Path
+from src.evaluation_helpers import (
+    calculate_ev,
+    apply_production_draw_filters,
+    apply_relaxed_draw_filters,
+    validate_odds,
+    validate_prob,
+)
 
 # ── sys.path ANTES de cualquier import de src ────────────────────────
 sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -151,6 +158,12 @@ def compute_live_predictions(
             p = predict_match(
                 f["lambda_home"], f["lambda_away"], rho=rho, model="dixon_coles"
             )
+            if not validate_odds(row["odds_draw"]):
+                logger.warning(f"Cuota inválida {home} vs {away}: {row['odds_draw']}")
+                continue
+            if not validate_prob(p["prob_draw"]):
+                logger.warning(f"Prob inválida {home} vs {away}: {p['prob_draw']}")
+                continue
             rows.append({
                 "competition": league,
                 "date": row["date"],
