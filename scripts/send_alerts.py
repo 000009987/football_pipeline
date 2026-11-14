@@ -2,13 +2,6 @@ import json
 import os
 import sys
 from pathlib import Path
-from src.evaluation_helpers import (
-    calculate_ev,
-    apply_production_draw_filters,
-    apply_relaxed_draw_filters,
-    validate_odds,
-    validate_prob,
-)
 
 # ── sys.path ANTES de cualquier import de src ────────────────────────
 sys.path.append(str(Path(__file__).resolve().parent.parent))
@@ -33,6 +26,8 @@ from src.evaluation_helpers import (
     calculate_ev,
     apply_production_draw_filters,
     apply_relaxed_draw_filters,
+    validate_odds,
+    validate_prob,
 )
 from src.alerts_logger import log_alert, ALERTS_LOG
 from src.logger import get_logger
@@ -147,39 +142,45 @@ def compute_live_predictions(
 
     Propaga bookmaker_key, market y capture_timestamp desde upcoming_fixtures
     para que log_alert() pueda registrar la procedencia real de la cuota.
+
+    Valida cuota y probabilidad antes de añadir la fila (B2.10).
     """
     rows = []
     for _, row in upcoming_df.iterrows():
         league = row.get("competition", "")
+        home = row.get("home_team", "?")
+        away = row.get("away_team", "?")
         rho = get_rho_for_league(league, rho_cache)
+
         try:
             history_league = history_df[history_df["competition"] == league]
             f = enrich_fixture(row, history_league, as_of_date=row["date"])
             p = predict_match(
                 f["lambda_home"], f["lambda_away"], rho=rho, model="dixon_coles"
             )
-            if not validate_odds(row["odds_draw"]):
-                logger.warning(f"Cuota inválida {home} vs {away}: {row['odds_draw']}")
-                continue
-            if not validate_prob(p["prob_draw"]):
-                logger.warning(f"Prob inválida {home} vs {away}: {p['prob_draw']}")
-                continue
-            rows.append({
-                "competition": league,
-                "date": row["date"],
-                "home_team": row["home_team"],
-                "away_team": row["away_team"],
-                "prob_D": p["prob_draw"],
-                "odds": row["odds_draw"],
-                "bookmaker_key": row.get("bookmaker_key", "unknown"),
-                "market": row.get("market", "h2h"),
-                "capture_timestamp": row.get("capture_timestamp", ""),
-            })
         except Exception as e:
-            logger.warning(
-                f"Error prediciendo {row.get('home_team')} vs "
-                f"{row.get('away_team')}: {e}"
-            )
+            logger.warning(f"Error prediciendo {home} vs {away}: {e}")
+            continue
+
+        # ── Validar cuota y prob antes de añadir ────────────────────
+        if not validate_odds(row["odds_draw"]):
+            logger.warning(f"Cuota inválida {home} vs {away}: {row['odds_draw']}")
+            continue
+        if not validate_prob(p["prob_draw"]):
+            logger.warning(f"Prob inválida {home} vs {away}: {p['prob_draw']}")
+            continue
+
+        rows.append({
+            "competition": league,
+            "date": row["date"],
+            "home_team": row["home_team"],
+            "away_team": row["away_team"],
+            "prob_D": p["prob_draw"],
+            "odds": row["odds_draw"],
+            "bookmaker_key": row.get("bookmaker_key", "unknown"),
+            "market": row.get("market", "h2h"),
+            "capture_timestamp": row.get("capture_timestamp", ""),
+        })
     return pd.DataFrame(rows)
 
 
@@ -218,11 +219,6 @@ def run_draw_alerts(max_alerts: int = 5):
     history = pd.read_parquet(HISTORY_PARQUET)
 
     # ── Normalizar fechas a naive UTC (consistencia con baseline_clean) ──
-    # history_with_xg.parquet está como datetime64[ns, UTC] desde Fase 1.
-    # upcoming_fixtures.parquet está como datetime64[ns] (naive UTC).
-    # enrich_fixture compara as_of_date con history["date"], así que ambos
-    # deben estar en el mismo formato para evitar:
-    #   "Invalid comparison between dtype=datetime64[ns, UTC] and Timestamp"
     history["date"] = pd.to_datetime(history["date"]).dt.tz_localize(None)
     upcoming["date"] = pd.to_datetime(upcoming["date"]).dt.tz_localize(None)
 
@@ -304,6 +300,17 @@ def run_draw_alerts(max_alerts: int = 5):
         market = row.get("market", "h2h")
         capture_ts = row.get("capture_timestamp", "")
 
+        # ── Stake: Kelly 0.25x para PICK, 0 para INFO (B2.15) ────────
+        # Se calcula ANTES del mensaje para que Telegram muestre el stake real.
+        if tier == "PICK":
+            p_raw = float(row["prob_D"])  # prob raw 0-1
+            o_raw = float(odds)
+            kelly = ((p_raw * o_raw - 1) / (o_raw - 1)) if o_raw > 1 else 0.0
+            kelly = max(0.0, kelly)
+            stake_val = round(min(0.25 * kelly, 1.0), 2)  # cap 1 unidad
+        else:
+            stake_val = 0.0  # INFO = solo track
+
         # ── Comprobar duplicado ─────────────────────────────────────
         if ALERTS_LOG.exists():
             _existing = pd.read_csv(ALERTS_LOG)
@@ -321,11 +328,11 @@ def run_draw_alerts(max_alerts: int = 5):
 
         if is_pick and is_validated:
             prefix = "📌 PICK VALIDADO"
-            stake = "1 Unidad"
+            stake = f"{stake_val:.2f} Unidad(es)"
             tag = f"✅ Liga {league} validada (edge confirmado)"
         elif is_pick:
             prefix = "📌 PICK (sin validar)"
-            stake = "1 Unidad"
+            stake = f"{stake_val:.2f} Unidad(es)"
             tag = f"⚠️ Liga {league} sin edge validado — backtest negativo"
         else:
             prefix = "🔍 INFO (cuota alta)"
@@ -354,7 +361,7 @@ def run_draw_alerts(max_alerts: int = 5):
         if telegram_ok:
             logger.info(
                 f"Alerta enviada: {home} vs {away} ({league}) "
-                f"[{tier}] [{bookmaker}]"
+                f"[{tier}] [{bookmaker}] stake={stake_val:.2f}"
             )
         else:
             logger.warning(
@@ -363,16 +370,6 @@ def run_draw_alerts(max_alerts: int = 5):
             )
 
         # ── Registrar SIEMPRE en alerts_history.csv (paper trading honesto)
-        # Aunque Telegram falle, la alerta se acumula para el análisis de Fase 3.
-        if tier == "PICK":
-            p = float(row["prob_D"])  # prob raw 0-1
-            o = float(odds)
-            kelly = ((p * o - 1) / (o - 1)) if o > 1 else 0.0
-            kelly = max(0.0, kelly)
-            stake_val = round(min(0.25 * kelly, 1.0), 2)  # cap 1 unidad
-        else:
-            stake_val = 0.0  # INFO = solo track
-
         log_alert({
             "competition": league,
             "match_date": date,
@@ -390,8 +387,7 @@ def run_draw_alerts(max_alerts: int = 5):
             "clv_source": "",  # se rellena en update_clv_history.py (Fase 2 B2.5)
         })
 
-        # ── Sleep más largo entre mensajes (2s) para evitar rate limiting.
-        # Telegram permite ~1 msg/seg por chat, pero bots nuevos necesitan margen.
+        # ── Sleep 2s entre mensajes para evitar rate limiting
         time.sleep(2)
 
 

@@ -84,3 +84,34 @@ def test_invalid_prob_are_skipped():
     src = Path("scripts/send_alerts.py").read_text(encoding="utf-8")
     assert "validate_prob" in src, "send_alerts.py no importa validate_prob"
     assert "not validate_prob(" in src, "send_alerts.py no llama a validate_prob"
+    
+
+
+def test_telegram_message_uses_real_stake():
+    """
+    B2.15: el mensaje de Telegram muestra el stake real, no '1 Unidad' hardcoded.
+
+    Verifica que send_alerts.py usa {stake_val:.2f} en el mensaje, no "1 Unidad".
+    """
+    from pathlib import Path
+
+    src = Path("scripts/send_alerts.py").read_text(encoding="utf-8")
+
+    # 1. No debe haber "1 Unidad" hardcodeado en el mensaje
+    assert 'stake = "1 Unidad"' not in src, (
+        "send_alerts.py todavía tiene '1 Unidad' hardcodeado. B2.15 no aplicado."
+    )
+
+    # 2. Debe usar f-string con stake_val
+    assert "stake_val:.2f" in src, (
+        "send_alerts.py no usa f'{stake_val:.2f}' en el mensaje"
+    )
+
+    # 3. stake_val debe calcularse antes del mensaje (heurística: aparece antes de "prefix =")
+    idx_stake_val = src.find("stake_val = round(min(0.25 * kelly")
+    idx_prefix = src.find('prefix = "📌 PICK VALIDADO"')
+    assert idx_stake_val > 0, "stake_val no se calcula"
+    assert idx_prefix > 0, "prefix no existe"
+    assert idx_stake_val < idx_prefix, (
+        "stake_val se calcula DESPUÉS del mensaje. Debe ir ANTES."
+    )
