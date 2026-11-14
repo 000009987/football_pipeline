@@ -295,7 +295,8 @@ def build_team_ratings(df: pd.DataFrame) -> pd.DataFrame:
 def compute_ratings_for_team(team: str, df: pd.DataFrame,
                               as_of_date=None,
                               col_home: str = "home_goals",
-                              col_away: str = "away_goals") -> dict:
+                              col_away: str = "away_goals",
+                              regress_weight: float = 12) -> dict:
     """
     Ratings de ataque/defensa para `team`.
 
@@ -358,8 +359,8 @@ def compute_ratings_for_team(team: str, df: pd.DataFrame,
     def_away = (weighted_avg(away_matches[col_home], away_matches["date"], lg_avg_home)
                 / lg_avg_home) if n_away >= 3 else 1.0
 
-    def regress(rating, n, target=1.0, weight=12):
-        return (rating * n + target * weight) / (n + weight)
+    def regress(rating, n, target=1.0):
+        return (rating * n + target * regress_weight) / (n + regress_weight)
 
     att_home = regress(att_home, n_home)
     def_home = regress(def_home, n_home)
@@ -403,14 +404,17 @@ def compute_ratings_for_team(team: str, df: pd.DataFrame,
 def enrich_fixture(fixture_row: pd.Series, df_history: pd.DataFrame,
                    as_of_date=None,
                    col_home: str = "home_goals",
-                   col_away: str = "away_goals") -> dict:
+                   col_away: str = "away_goals",
+                   regress_weight: float = 12) -> dict:
     ht = normalize_team_name(fixture_row["home_team"])
     at = normalize_team_name(fixture_row["away_team"])
 
     hr = compute_ratings_for_team(ht, df_history, as_of_date=as_of_date,
-                                   col_home=col_home, col_away=col_away)
+                                   col_home=col_home, col_away=col_away,
+                                   regress_weight=regress_weight)
     ar = compute_ratings_for_team(at, df_history, as_of_date=as_of_date,
-                                   col_home=col_home, col_away=col_away)
+                                   col_home=col_home, col_away=col_away,
+                                   regress_weight=regress_weight)
 
     n_home_total = hr["n_home"] + hr["n_away"]
     n_away_total = ar["n_home"] + ar["n_away"]
