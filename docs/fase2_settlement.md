@@ -134,9 +134,49 @@ pytest -v
 **Código de Fase 2 que cambia:** **0 líneas.** `determine_clv_source` ya devuelve `("Pinnacle", True)` cuando `PSCD` es válido (test `test_determine_clv_source_pinnacle` lo verifica).
 
 **Nota:** las 25 alertas pre-fix que ya tienen `result` relleno no se re-procesan automáticamente. Si se quiere forzar re-liquidación:
-```python
+``python
 # Script one-time (opcional)
 df = pd.read_csv("output/alerts_history.csv")
 df.loc[df["result"].notna(), "result"] = ""  # forzar re-liquidación
 df.to_csv("output/alerts_history.csv", index=False)
 # Luego: python scripts/update_clv_history.py
+
+---
+
+## 8. Alertas pre-fix (pre-2026-11-14)
+
+### 8.1 Qué son
+
+Las **21 alertas** generadas antes de los fixes de Fase 2 (commits `b9bc2fd` y posteriores) tienen:
+
+- `odds_source = "Pinnacle (unverified)"` (no verificable)
+- `capture_timestamp` vacío (sin hora de captura)
+- `clv_source` vacío
+- `stake` fijo (1.0 para PICKs, 0.0 para INFOs)
+
+### 8.2 Qué se puede usar
+
+| Métrica | ¿Usable? | Nota |
+|---|---|---|
+| **PnL** | ✅ Sí (desde B2.7) | PnL se calcula con stake real |
+| **Hit rate** | ✅ Sí | W/L del CSV |
+| **Yield** | ✅ Sí | PnL / stake total |
+| **CLV** | ❌ **NO** | Sin fuente de apertura verificable, CLV es inválido |
+
+### 8.3 Cómo segmentar el CSV
+
+Para el análisis de Fase 3, segmentar `alerts_history.csv` por `odds_source`:
+
+```python
+import pandas as pd
+
+df = pd.read_csv("output/alerts_history.csv")
+pre_fix = df[df["odds_source"] == "Pinnacle (unverified)"]
+post_fix = df[df["odds_source"] != "Pinnacle (unverified)"]
+
+# CLV agregado: solo post_fix
+clv_agregado = post_fix["clv_pct"].mean()
+
+# PnL y yield: ambos
+pnl_total = df["pnl"].sum()
+yield_total = df["pnl"].sum() / df["stake"].sum()
