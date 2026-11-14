@@ -351,6 +351,15 @@ def run_draw_alerts(max_alerts: int = 5):
 
         # ── Registrar SIEMPRE en alerts_history.csv (paper trading honesto)
         # Aunque Telegram falle, la alerta se acumula para el análisis de Fase 3.
+        if tier == "PICK":
+            p = float(row["prob_D"])  # prob raw 0-1
+            o = float(odds)
+            kelly = ((p * o - 1) / (o - 1)) if o > 1 else 0.0
+            kelly = max(0.0, kelly)
+            stake_val = round(min(0.25 * kelly, 1.0), 2)  # cap 1 unidad
+        else:
+            stake_val = 0.0  # INFO = solo track
+
         log_alert({
             "competition": league,
             "match_date": date,
@@ -364,6 +373,8 @@ def run_draw_alerts(max_alerts: int = 5):
             "ev": row["ev"],
             "tier": tier,
             "is_validated": int(is_validated),
+            "stake": stake_val,
+            "clv_source": "",  # se rellena en update_clv_history.py (Fase 2 B2.5)
         })
 
         # ── Sleep más largo entre mensajes (2s) para evitar rate limiting.

@@ -12,8 +12,8 @@ ALERTS_LOG = OUTPUT_DIR / "alerts_history.csv"
 FIELDS = [
     "timestamp_sent", "competition", "match_date", "home_team", "away_team",
     "prob_D", "odds_open", "odds_source", "market", "capture_timestamp",
-    "ev", "tier", "is_validated",
-    "odds_close", "result", "clv_pct", "pnl",
+    "ev", "tier", "is_validated", "stake",
+    "odds_close", "result", "clv_pct", "clv_source", "pnl",
 ]
 
 
