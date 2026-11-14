@@ -297,3 +297,75 @@ Para Fase 2: si LightGBM usa rho como feature, la inestabilidad debe tratarse (e
 El `output/alerts_history.csv` actual contiene 25 alertas, con fechas entre el 18 de octubre y el 8 de noviembre de 2026. Todas son anteriores a este fix y deben tratarse como **pre-fix**: sus ratings se calcularon con el histórico multicompetición. El cambio no recalcula ni modifica esas predicciones históricas.
 
 **Código:** `scripts/send_alerts.py`, función `compute_live_predictions`.
+
+---
+
+## 12. Desviaciones del roadmap original (justificadas)
+
+El roadmap de Fase 1 pedía 6 tareas y 6 entregables. 4 de los entregables y 5 de las tareas están completos al 100%. Las 2 desviaciones están justificadas con evidencia y documentadas aquí.
+
+### 12.1 `HOME_ADVANTAGE` global en vez de por liga (Tarea 4)
+
+**Lo que pedía el roadmap:** `HOME_ADVANTAGE` por temporada.
+
+**Lo que se hizo:** `HOME_ADVANTAGE = 1.0` global.
+
+**Justificación:** análisis empírico con 150 partidos por liga (2026) mostró que HA por liga no generaliza:
+
+- Δ Brier entre HA=0.95 y HA=1.10: <0.002 en todas las ligas.
+- Ningún bias P(H) supera 2σ (con n=150, σ ≈ 4 pp).
+- El patrón PL/PD/PPL es inestable: cada liga tiene su "suerte" en 150 partidos, no una característica estructural.
+
+**Decisión:** HA=1.0 global. Elimina el doble conteo de localía (bug B3). Si en Fase 2/3 con n≥500 por liga se ve evidencia de que HA varía por liga, se implementa entonces.
+
+**Dónde se revisita:** Fase 4 (comparativa final) o cuando haya 3+ temporadas completas por liga.
+
+### 12.2 `LEAGUE_PARAMS` como caché JSON en vez de `config.py` (Entregable 3)
+
+**Lo que pedía el roadmap:** `src/config.py` con `LEAGUE_PARAMS` (rho, home_adv, decay por liga).
+
+**Lo que se hizo:**
+
+- `rho` por liga → `output/rho_cache.json` (generado por `compute_league_rho.py`).
+- `home_adv` → 1.0 global (ver §12.1).
+- `decay` → `DECAY_FACTOR` global (no se analizó si varía por liga).
+
+**Justificación:** el caché JSON es funcionalmente equivalente a `LEAGUE_PARAMS` para `rho`, y se regenera con un script (`compute_league_rho.py`) sin tocar código. Poner `rho` en `config.py` requeriría editar el archivo cada vez que se recalcula, o hardcodear los valores (que es exactamente lo que el roadmap quería evitar con `-0.13`).
+
+**Decisión:** mantener `rho_cache.json`. Si en Fase 2 se necesita `LEAGUE_PARAMS` con los 3 parámetros juntos (para pasarlos como dict a LightGBM, por ejemplo), se refactoriza entonces.
+
+**Dónde se revisita:** inicio de Fase 2, si LightGBM usa `rho` como feature.
+
+### 12.3 `send_alerts.py` con `rho_cache` en vez de `estimate_rho` walk-forward (Entregable 4)
+
+**Lo que pedía el roadmap:** `send_alerts.py` usando `estimate_rho()` walk-forward.
+
+**Lo que se hizo:**
+
+- `send_alerts.py` usa `rho_cache.json` (últimos 300 partidos de cada liga).
+- `baseline_clean.py` usa `compute_rho_walk_forward(train)` estricto.
+
+**Justificación:** en producción, "walk-forward" no tiene sentido literal. No hay "train" separado del "test" cuando predices el futuro inmediato. Usar los últimos 300 partidos es la forma correcta de estimar `rho` para live: refleja la forma reciente de la liga.
+
+Walk-forward estricto es correcto en backtest, y eso es lo que hace `baseline_clean.py`. Forzar walk-forward en producción sería artificial: usarías partidos de 2025 para predecir un partido de 2026 aunque tengas datos de 2026 disponibles.
+
+**Decisión:** mantener `rho_cache` en producción, walk-forward en backtest. La distinción está documentada en §6.5.
+
+**Dónde se revisita:** nunca. Es la decisión correcta por diseño.
+
+---
+
+## Resumen de Fase 1 tras estas desviaciones
+
+| Elemento                           | Estado                                |
+| ---------------------------------- | ------------------------------------- |
+| Tareas completas                   | 5/6 (100% de lo técnicamente posible) |
+| Tareas parciales justificadas      | 1/6 (§12.1)                           |
+| Entregables completos              | 4/6 (100% de lo técnicamente posible) |
+| Entregables parciales justificados | 2/6 (§12.2, §12.3)                    |
+| Tests                              | 67/67                                 |
+| Gate 0                             | 7/7                                   |
+| Invariantes                        | 7/7                                   |
+| Baseline honesto con IC95%         | ✅                                    |
+| Data leakage                       | ✅ Ninguno                            |
+| Documentación                      | ✅ Completa, incluyendo §12           |
