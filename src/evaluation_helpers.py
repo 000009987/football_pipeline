@@ -159,10 +159,10 @@ def determine_clv_source(pscd, avgcd, odds_source_open: str) -> tuple:
         return ("Pinnacle", open_src == "pinnacle")
 
     if avgcd is not None and not pd.isna(avgcd) and float(avgcd) > 0:
-        # Avg o vacío (pre-fix asumía Avg implícitamente)
-        return ("Avg", open_src in ("avg", ""))
-
-    return ("", False)
+        # Solo comparable si la apertura es explícitamente "avg".
+        # Fuente vacía o desconocida → NO comparable.
+        return ("Avg", open_src == "avg")
+    return ("", False)   # ← esta línea es la que falta
 
 
 

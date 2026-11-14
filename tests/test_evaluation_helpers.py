@@ -155,7 +155,7 @@ def test_determine_clv_source_none():
 
 
 def test_determine_clv_source_nan():
-    """NaN en PSCD: fallback a Avg si apertura es avg/vacío."""
+    """NaN en PSCD: fallback a Avg si apertura es avg."""
     import pandas as pd
     src, comp = determine_clv_source(pd.NA, 2.6, "avg")
     assert src == "Avg"
@@ -170,14 +170,14 @@ def test_determine_clv_source_pscd_zero():
 
 
 def test_determine_clv_source_pscd_negative():
-    """PSCD negativo: fallback a Avg."""
+    """PSCD negativo: fallback a Avg si apertura es avg."""
     src, comp = determine_clv_source(-1.0, 2.6, "avg")
     assert src == "Avg"
     assert comp is True
 
 
-def test_determine_clv_source_empty_open_matches_avg():
-    """Open vacío (pre-fix) + AvgCD: asumir Avg como comparable."""
+def test_determine_clv_source_empty_open_not_comparable():
+    """Open vacío (fuente desconocida) + AvgCD: NO comparable."""
     src, comp = determine_clv_source(None, 2.6, "")
     assert src == "Avg"
-    assert comp is True
+    assert comp is False
