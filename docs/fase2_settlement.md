@@ -17,12 +17,12 @@ Garantizar que las cuotas y liquidaciones son correctas antes de añadir mercado
 
 ### 2.1 Liquidación de mercados (`src/markets.py`)
 
-| Mercado | Funciones | Casos soportados |
-|---|---|---|
-| 1X2 | `settle_1x2` | win, loss (sin push, sin media) |
-| O/U 2.5 | `settle_ou25` | win, loss (sin push) |
-| BTTS | `settle_btts` | win, loss (sin push) |
-| AH asiático | `settle_ah` | win, loss, push, half-win, half-loss, void (líneas .0, .25, .5, .75) |
+| Mercado     | Funciones     | Casos soportados                                                     |
+| ----------- | ------------- | -------------------------------------------------------------------- |
+| 1X2         | `settle_1x2`  | win, loss (sin push, sin media)                                      |
+| O/U 2.5     | `settle_ou25` | win, loss (sin push)                                                 |
+| BTTS        | `settle_btts` | win, loss (sin push)                                                 |
+| AH asiático | `settle_ah`   | win, loss, push, half-win, half-loss, void (líneas .0, .25, .5, .75) |
 
 **28 tests** en `tests/test_settlement.py`.
 
@@ -57,11 +57,11 @@ Garantizar que las cuotas y liquidaciones son correctas antes de añadir mercado
 
 ## 3. Criterios de Gate 2
 
-| # | Criterio | Estado |
-|---|---|---|
-| 1 | Pruebas cubren todos los casos de liquidación (push, half-win, half-loss) | ✅ 28 tests |
-| 2 | Cada apuesta reconstruible desde el precio original | ✅ `odds_open` + `capture_timestamp` + `odds_source` en CSV |
-| 3 | CLV solo para precios comparables (misma casa/fuente/línea) | ✅ `determine_clv_source` + `clv_source` en CSV |
+| #   | Criterio                                                                  | Estado                                                      |
+| --- | ------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| 1   | Pruebas cubren todos los casos de liquidación (push, half-win, half-loss) | ✅ 28 tests                                                 |
+| 2   | Cada apuesta reconstruible desde el precio original                       | ✅ `odds_open` + `capture_timestamp` + `odds_source` en CSV |
+| 3   | CLV solo para precios comparables (misma casa/fuente/línea)               | ✅ `determine_clv_source` + `clv_source` en CSV             |
 
 **Gate 2 formalmente cumplido.**
 
@@ -77,15 +77,66 @@ Garantizar que las cuotas y liquidaciones son correctas antes de añadir mercado
 
 ## 5. Cómo reproducir
 
-```bash
+//bash
+
 # 1. Verificar Gate 2
+
 python scripts/verify_gate2.py
 
 # 2. Tests de liquidación
+
 pytest tests/test_settlement.py -v
 
 # 3. Tests de desvig/validación/Kelly/CLV
+
 pytest tests/test_evaluation_helpers.py -v
 
 # 4. Todos los tests
+
 pytest -v
+
+---
+
+## 7. Compatibilidad con futuras resoluciones de L1-L3
+
+**Fase 2 está diseñada para que las limitaciones L1-L3 de Fase 0 se resuelvan sin cambios de código.**
+
+### 7.1 L1 — xG 2026-27 no disponible
+
+**Qué afecta a Fase 2:** nada. `src/markets.py`, `evaluation_helpers.py`, `update_clv_history.py` **no leen xG**. La liquidación usa `home_goals`/`away_goals`. El CLV usa `odds_open`/`PSCD`/`AvgCD`.
+
+**Cómo se resolverá:** cuando aparezca fuente de xG fresco (API nueva, Understat arreglado, datos de pago):
+1. Añadir xG de 2026-27 a `data/raw/xg_*.csv`.
+2. `python scripts/enrich_history_with_xg.py` → `history_with_xg.parquet` con `home_xg`/`away_xg` rellenos para 2026-27.
+3. `python scripts/verify_invariants.py` → 7/7 PASS.
+4. `python scripts/verify_gate0.py` → 7/7 PASS.
+5. Actualizar `data_contract.md` §6 L1 → "resuelta (fecha)".
+
+**Código de Fase 2 que cambia:** **0 líneas.**
+
+### 7.2 L2 — PSCD 2026-27 no disponible
+
+**Qué afecta a Fase 2:** parcialmente, pero **manejado por diseño**.
+
+`determine_clv_source` ya cubre los 3 casos:
+- `("Pinnacle", True)` si `PSCD` válido → CLV comparable.
+- `("Avg", False)` si solo `AvgCD` → CLV no concluyente, `clv_pct` vacío.
+- `("", False)` si ninguno → sin CLV.
+
+**Estado actual (2026-11-14):** los 25 alerts pre-fix tienen `clv_source=""` y `clv_pct` vacío. Cuando se liquiden partidos 2026-27, se marcarán `clv_source="Avg"` (no concluyente) porque `PSCD` no existe.
+
+**Cómo se resolverá:** cuando football-data.co.uk publique `PSCD` para 2026-27 (o aparezca otra fuente):
+1. `python scripts/refresh_history.py` → `history.parquet` con `PSCD` poblado.
+2. `python scripts/enrich_history_with_xg.py` → propaga `PSCD`.
+3. `python scripts/update_clv_history.py` → rellena `clv_source="Pinnacle"` + `clv_pct` numérico para partidos con PSCD.
+4. Actualizar `data_contract.md` §6 L2 → "resuelta (fecha)".
+
+**Código de Fase 2 que cambia:** **0 líneas.** `determine_clv_source` ya devuelve `("Pinnacle", True)` cuando `PSCD` es válido (test `test_determine_clv_source_pinnacle` lo verifica).
+
+**Nota:** las 25 alertas pre-fix que ya tienen `result` relleno no se re-procesan automáticamente. Si se quiere forzar re-liquidación:
+```python
+# Script one-time (opcional)
+df = pd.read_csv("output/alerts_history.csv")
+df.loc[df["result"].notna(), "result"] = ""  # forzar re-liquidación
+df.to_csv("output/alerts_history.csv", index=False)
+# Luego: python scripts/update_clv_history.py
