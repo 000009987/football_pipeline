@@ -148,3 +148,33 @@ def determine_clv_source(pscd, avgcd) -> tuple:
     if avgcd is not None and not pd.isna(avgcd) and float(avgcd) > 0:
         return ("Avg", False)
     return ("", False)
+
+
+
+def calculate_pnl(odds: float, stake: float, is_win: bool) -> float:
+    """
+    Calcula el PnL de una apuesta respetando el stake.
+
+    Args:
+        odds: cuota decimal (> 1.0)
+        stake: unidades apostadas (0 = no se apostó)
+        is_win: True si la apuesta ganó
+
+    Returns:
+        PnL en unidades.
+        - stake <= 0 → 0.0 (INFO o stake no definido)
+        - is_win → stake * (odds - 1)
+        - not is_win → -stake
+
+    Ejemplos:
+        calculate_pnl(2.5, 1.0, True)   → 1.5
+        calculate_pnl(2.5, 1.0, False)  → -1.0
+        calculate_pnl(2.5, 0.0, True)   → 0.0
+        calculate_pnl(2.5, 0.06, True)  → 0.09
+        calculate_pnl(2.5, 0.06, False) → -0.06
+    """
+    if stake <= 0:
+        return 0.0
+    if is_win:
+        return stake * (odds - 1.0)
+    return -stake

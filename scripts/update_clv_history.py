@@ -25,7 +25,7 @@ from datetime import timedelta
 import unicodedata
 
 from src.config import OUTPUT_DIR, HISTORY_PARQUET
-from src.evaluation_helpers import determine_clv_source
+from src.evaluation_helpers import determine_clv_source, calculate_pnl
 from src.logger import get_logger
 
 logger = get_logger("update_clv")
@@ -132,8 +132,23 @@ def main():
             odds_close_val = None
 
         # PnL con stake 1 unidad (usa odds_open real, lo que apostaste)
-        pnl = (float(alert["odds_open"]) - 1) if is_draw else -1.0
+                # ── PnL respetando el stake registrado ─────────────────────
+        try:
+            stake_val = float(alert.get("stake", 0.0) or 0.0)
+        except (TypeError, ValueError):
+            stake_val = 0.0
+            logger.warning(
+                f"Stake inválido en alerta {idx}: {alert.get('stake')!r}. Usando 0.0."
+            )
 
+        odds_open_val = float(alert["odds_open"])
+        if odds_open_val <= 1.0:
+            logger.warning(
+                f"odds_open inválido en alerta {idx}: {odds_open_val}. Saltando."
+            )
+            continue
+
+        pnl = calculate_pnl(odds_open_val, stake_val, is_win=bool(is_draw))
         # CLV: solo calcular si los bookmakers son comparables
         clv_pct = None
         if clv_comparable and odds_close_val is not None and odds_close_val > 0:
