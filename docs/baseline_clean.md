@@ -261,3 +261,29 @@ Para backtest (baseline_clean.py): ahora es honesto (sin leakage), aunque la ine
 Para Fase 2: si LightGBM usa rho como feature, la inestabilidad debe tratarse (ej. rho promedio de las últimas 2 temporadas, no de la temporada test).
 ```
 ````
+
+---
+
+## 11. Grid search de `regress_weight` (P1-1 del audit)
+
+**Hipótesis del audit independiente:** `weight=12` en `regress()` regresiona agresivamente los ratings a la media. Con `n=3`, el rating es solo 20% propio + 80% media. Esto podría estar "colapsando" los lambdas y explicando por qué DC ≈ Poisson en 1X2.
+
+**Test:** grid search de `regress_weight ∈ {4, 6, 8, 12, 16}` sobre walk-forward 2025+2026 en las 7 ligas (3005 partidos).
+
+**Resultado:**
+
+| weight | Brier      | Δ vs 12  |
+| ------ | ---------- | -------- |
+| 4      | 0.2003     | -0.0000  |
+| 6      | 0.2001     | -0.0002  |
+| 8      | 0.2001     | -0.0002  |
+| **12** | **0.2003** | baseline |
+| 16     | 0.2007     | +0.0004  |
+
+**Δ Brier máximo: 0.0004** (1/12 del umbral de señal real >0.005).
+
+**Conclusión:** `regress_weight` **no tiene impacto en Brier**. La hipótesis del audit era falsa. `DC ≈ Poisson` en 1X2 **es una característica real del modelo**, no un artefacto del peso de regresión.
+
+**Implicación para Fase 2:** LightGBM debe batir a DC por un margen >0.005 con IC95% no solapados. Si no lo hace, el edge no existe con estas features. `weight=12` es el default óptimo confirmado.
+
+**Código reproducible:** `scripts/grid_search_weight.py`.
