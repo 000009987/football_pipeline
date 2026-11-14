@@ -131,22 +131,37 @@ def kelly_fraction(prob: float, odds: float, fraction: float = 0.25) -> float:
 
 # ─── Determinación de fuente CLV ─────────────────────────────────────
 
-def determine_clv_source(pscd, avgcd) -> tuple:
+def determine_clv_source(pscd, avgcd, odds_source_open: str) -> tuple:
     """
     Decide la fuente de cierre y si el CLV es comparable.
 
+    Args:
+        pscd: cuota de cierre de Pinnacle (o None/NaN)
+        avgcd: cuota de cierre promedio (o None/NaN)
+        odds_source_open: fuente de la cuota de apertura
+                          (bookmaker_key de fetch_upcoming: "pinnacle", "bet365", ...)
+
     Returns:
         (clv_source, clv_comparable)
-        - ("Pinnacle", True) si hay PSCD válido
-        - ("Avg", False) si solo hay AvgCD
-        - ("", False) si no hay ninguno
+        - ("Pinnacle", True) si PSCD válido Y apertura es Pinnacle
+        - ("Pinnacle", False) si PSCD válido pero apertura NO es Pinnacle
+        - ("Avg", True) si solo AvgCD Y apertura es Avg/vacío
+        - ("Avg", False) si solo AvgCD pero apertura NO es Avg
+        - ("", False) si no hay cierre
+
+    Regla: solo se calcula CLV si apertura y cierre son de la MISMA casa.
     """
     import pandas as pd
 
+    open_src = str(odds_source_open or "").lower().strip()
+
     if pscd is not None and not pd.isna(pscd) and float(pscd) > 0:
-        return ("Pinnacle", True)
+        return ("Pinnacle", open_src == "pinnacle")
+
     if avgcd is not None and not pd.isna(avgcd) and float(avgcd) > 0:
-        return ("Avg", False)
+        # Avg o vacío (pre-fix asumía Avg implícitamente)
+        return ("Avg", open_src in ("avg", ""))
+
     return ("", False)
 
 

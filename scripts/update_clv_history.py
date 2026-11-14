@@ -122,8 +122,11 @@ def main():
         odds_close_psc = row.get("PSCD")
         odds_close_avg = row.get("AvgCD")
 
-        clv_source, clv_comparable = determine_clv_source(odds_close_psc, odds_close_avg)
-
+        clv_source, clv_comparable = determine_clv_source(
+            odds_close_psc,
+            odds_close_avg,
+            alert.get("odds_source", ""),
+        )
         if clv_source == "Pinnacle":
             odds_close_val = float(odds_close_psc)
         elif clv_source == "Avg":

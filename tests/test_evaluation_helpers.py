@@ -119,44 +119,65 @@ def test_kelly_fraction_half():
 
 # ─── determine_clv_source ────────────────────────────────────────────
 
-def test_determine_clv_source_pinnacle():
-    """Con PSCD válido: Pinnacle, comparable."""
-    src, comp = determine_clv_source(2.5, 2.6)
+def test_determine_clv_source_pinnacle_match():
+    """Pinnacle open + PSCD close: comparable."""
+    src, comp = determine_clv_source(2.5, 2.6, "pinnacle")
     assert src == "Pinnacle"
     assert comp is True
 
 
-def test_determine_clv_source_avg_only():
-    """Solo AvgCD: Avg, no comparable."""
-    src, comp = determine_clv_source(None, 2.6)
+def test_determine_clv_source_pinnacle_mismatch():
+    """Bet365 open + PSCD close: NO comparable (fuente distinta)."""
+    src, comp = determine_clv_source(2.5, 2.6, "bet365")
+    assert src == "Pinnacle"
+    assert comp is False
+
+
+def test_determine_clv_source_avg_match():
+    """Avg open + AvgCD close: comparable."""
+    src, comp = determine_clv_source(None, 2.6, "avg")
+    assert src == "Avg"
+    assert comp is True
+
+
+def test_determine_clv_source_avg_mismatch():
+    """Pinnacle open + AvgCD close: NO comparable."""
+    src, comp = determine_clv_source(None, 2.6, "pinnacle")
     assert src == "Avg"
     assert comp is False
 
 
 def test_determine_clv_source_none():
     """Sin cierre: vacío, no comparable."""
-    src, comp = determine_clv_source(None, None)
+    src, comp = determine_clv_source(None, None, "")
     assert src == ""
     assert comp is False
 
 
 def test_determine_clv_source_nan():
-    """NaN en PSCD: fallback a Avg si existe."""
+    """NaN en PSCD: fallback a Avg si apertura es avg/vacío."""
     import pandas as pd
-    src, comp = determine_clv_source(pd.NA, 2.6)
+    src, comp = determine_clv_source(pd.NA, 2.6, "avg")
     assert src == "Avg"
-    assert comp is False
+    assert comp is True
 
 
 def test_determine_clv_source_pscd_zero():
-    """PSCD=0: tratar como inválido, fallback a Avg."""
-    src, comp = determine_clv_source(0.0, 2.6)
+    """PSCD=0: fallback a Avg si apertura es avg."""
+    src, comp = determine_clv_source(0.0, 2.6, "avg")
     assert src == "Avg"
-    assert comp is False
+    assert comp is True
 
 
 def test_determine_clv_source_pscd_negative():
-    """PSCD negativo: tratar como inválido."""
-    src, comp = determine_clv_source(-1.0, 2.6)
+    """PSCD negativo: fallback a Avg."""
+    src, comp = determine_clv_source(-1.0, 2.6, "avg")
     assert src == "Avg"
-    assert comp is False
+    assert comp is True
+
+
+def test_determine_clv_source_empty_open_matches_avg():
+    """Open vacío (pre-fix) + AvgCD: asumir Avg como comparable."""
+    src, comp = determine_clv_source(None, 2.6, "")
+    assert src == "Avg"
+    assert comp is True

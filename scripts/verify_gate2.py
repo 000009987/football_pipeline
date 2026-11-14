@@ -66,9 +66,11 @@ def check_4_determine_clv_source():
     try:
         from src.evaluation_helpers import determine_clv_source
         # Sanity check
-        assert determine_clv_source(2.5, 2.6) == ("Pinnacle", True)
-        assert determine_clv_source(None, 2.6) == ("Avg", False)
-        assert determine_clv_source(None, None) == ("", False)
+        assert determine_clv_source(2.5, 2.6, "pinnacle") == ("Pinnacle", True)
+        assert determine_clv_source(2.5, 2.6, "bet365") == ("Pinnacle", False)
+        assert determine_clv_source(None, 2.6, "avg") == ("Avg", True)
+        assert determine_clv_source(None, 2.6, "pinnacle") == ("Avg", False)
+        assert determine_clv_source(None, None, "") == ("", False)
     except Exception as e:
         return False, f"error: {e}"
     return True, "importable y funcional"
