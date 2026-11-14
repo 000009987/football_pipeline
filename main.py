@@ -346,7 +346,8 @@ def main():
     args = parser.parse_args()
 
     if args.mode == "download":
-        get_history(force_reload=True)
+        print("⚠️ DEPRECADO: usa 'python scripts/refresh_history.py' en su lugar")
+        sys.exit(1)
 
     elif args.mode == "analyze":
         run_analyze(days_ahead=args.days)
