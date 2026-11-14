@@ -15,6 +15,8 @@ Uso:
   python scripts/data_coverage_report.py
 """
 import sys
+import hashlib
+import subprocess
 from pathlib import Path
 from datetime import datetime
 
@@ -26,6 +28,7 @@ from src.config import HISTORY_PARQUET, UPCOMING_PARQUET, OUTPUT_DIR
 from src.logger import get_logger
 
 logger = get_logger("data_coverage")
+ROOT = Path(__file__).resolve().parent.parent
 
 
 # Columnas clave a auditar
@@ -41,6 +44,29 @@ KEY_COLUMNS = [
     ("PSCD", "cuota empate cierre Pinnacle"),
     ("B365CD", "cuota empate cierre Bet365"),
 ]
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _git_commit_short() -> str:
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
+
+    return result.stdout.strip() or "unknown"
 
 
 def coverage_by_league_season(df: pd.DataFrame) -> pd.DataFrame:
@@ -62,6 +88,9 @@ def coverage_by_league_season(df: pd.DataFrame) -> pd.DataFrame:
 def write_summary(df: pd.DataFrame, cov: pd.DataFrame, out_path: Path):
     """Escribe el resumen legible en .txt."""
     with open(out_path, "w", encoding="utf-8") as f:
+        f.write(f"Parquet SHA256: {_sha256_file(HISTORY_PARQUET)}\n")
+        f.write(f"Git commit: {_git_commit_short()}\n")
+        f.write("Schema: 2.0\n")
         f.write(f"REPORTE DE COBERTURA — {datetime.now().isoformat()}\n")
         f.write("=" * 70 + "\n\n")
 
