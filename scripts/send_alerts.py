@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -36,6 +37,7 @@ VALIDATED_LEAGUES = ["PL", "BL1"]
 
 # ─── Caché de rho por liga (generado por compute_league_rho.py) ──────
 RHO_CACHE = OUTPUT_DIR / "rho_cache.json"
+RAW_HISTORY_PARQUET = HISTORY_PARQUET.parent / "history.parquet"
 
 
 # ─── Telegram ────────────────────────────────────────────────────────
@@ -179,6 +181,22 @@ def run_draw_alerts(max_alerts: int = 5):
         return
     if not HISTORY_PARQUET.exists():
         logger.error(f"No existe {HISTORY_PARQUET}. No hay histórico para entrenar.")
+        return
+
+    if not RAW_HISTORY_PARQUET.exists():
+        logger.error(
+            f"No existe {RAW_HISTORY_PARQUET}. "
+            "No se puede validar si el histórico enriquecido está actualizado."
+        )
+        return
+
+    raw_mtime = os.path.getmtime(RAW_HISTORY_PARQUET)
+    enriched_mtime = os.path.getmtime(HISTORY_PARQUET)
+    if raw_mtime > enriched_mtime:
+        logger.error(
+            f"{RAW_HISTORY_PARQUET.name} es más reciente que {HISTORY_PARQUET.name}. "
+            "Ejecuta `python scripts/enrich_history_with_xg.py` antes de enviar alertas."
+        )
         return
 
     logger.info(f"Cargando fixtures desde: {UPCOMING_PARQUET.name}")

@@ -33,7 +33,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # (nombre, script, args, obligatorio)
 STEPS = [
     ("Refresh histórico",    "scripts/refresh_history.py",         [],      False),
-    ("Enriquecer xG",        "scripts/enrich_history_with_xg.py",  [],      False),
+    ("Enriquecer xG",        "scripts/enrich_history_with_xg.py",  [],      True),
     ("Fetch fixtures+cuotas","scripts/fetch_upcoming.py",          [],      True),
     ("Actualizar CLV",       "scripts/update_clv_history.py",      [],      False),
     ("Enviar alertas",       "scripts/send_alerts.py",             [],      True),
