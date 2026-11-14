@@ -330,9 +330,9 @@ def compute_ratings_for_team(team: str, df: pd.DataFrame,
         w = compute_weights(dates)
         return float(np.average(series, weights=w))
 
-    comp = df[df["home_team"] == team]["competition"].mode()
+    comp = past[past["home_team"] == team]["competition"].mode()
     if comp.empty:
-        comp = df[df["away_team"] == team]["competition"].mode()
+        comp = past[past["away_team"] == team]["competition"].mode()
     competition = comp.iloc[0] if not comp.empty else None
 
     if competition:

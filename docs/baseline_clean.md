@@ -287,3 +287,33 @@ Para Fase 2: si LightGBM usa rho como feature, la inestabilidad debe tratarse (e
 **Implicación para Fase 2:** LightGBM debe batir a DC por un margen >0.005 con IC95% no solapados. Si no lo hace, el edge no existe con estas features. `weight=12` es el default óptimo confirmado.
 
 **Código reproducible:** `scripts/grid_search_weight.py`.
+
+### 11.1 Repetición con `rho` walk-forward (2026-11-14)
+
+El grid search original usaba `rho_cache.json` (estimado con los últimos 300 partidos, incluyendo 2025-26 → leakage conceptual). Se repitió con `rho` estimado walk-forward por liga/temporada (misma metodología que `baseline_clean.py`, sin leakage).
+
+**Resultado con `rho` walk-forward:**
+
+| weight | Brier      | Δ vs 12  |
+| ------ | ---------- | -------- |
+| 4      | 0.2004     | -0.0000  |
+| 6      | 0.2002     | -0.0002  |
+| 8      | 0.2002     | -0.0002  |
+| **12** | **0.2004** | baseline |
+| 16     | 0.2008     | +0.0004  |
+
+**Δ Brier máximo: 0.0004.** Idéntico al grid original. La conclusión se mantiene: `weight` no tiene impacto en Brier.
+
+**Nota sobre agregaciones:** el Brier agregado del grid (0.2004) difiere del Brier de `baseline_clean_metrics.csv` (0.1988) porque son dos agregaciones distintas. `baseline_clean.py` calcula media de medias (14 filas, cada liga/temporada pesa igual). El grid calcula Brier global sobre las 3005 predicciones (ligas con más partidos pesan más). Ambas agregaciones son válidas; la diferencia no es un bug.
+
+### 11.2 Fix adicional: `.mode()` con `past` (2026-11-14)
+
+`compute_ratings_for_team` usaba `.mode()` sobre `df` (histórico completo) en vez de `past` (filtrado por `as_of_date`) para inferir la competición del equipo. Corregido a `past` en líneas 333/335 de `src/feature_engineering.py`.
+
+**Impacto en el baseline:** <0.0005. Todos los equipos de las 7 ligas domésticas juegan solo su liga en el parquet, así que `.mode()` devolvía el mismo valor con `df` que con `past`. El fix es correcto conceptualmente y previene leakage si en el futuro se añaden Championship o CL al parquet.
+
+### 11.2 Fix adicional: `.mode()` con `past` (2026-11-14)
+
+`compute_ratings_for_team` usaba `.mode()` sobre `df` (histórico completo) en vez de `past` (filtrado por `as_of_date`) para inferir la competición del equipo. Corregido a `past` en líneas 333/335 de `src/feature_engineering.py`.
+
+**Impacto en el baseline:** <0.0005. Todos los equipos de las 7 ligas domésticas juegan solo su liga en el parquet, así que `.mode()` devolvía el mismo valor con `df` que con `past`. El fix es correcto conceptualmente y previene leakage si en el futuro se añaden Championship o CL al parquet.

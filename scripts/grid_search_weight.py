@@ -2,28 +2,28 @@
 Grid search de regress_weight en enrich_fixture.
 
 Para cada weight ∈ {4, 6, 8, 12, 16}, ejecuta walk-forward sobre las 7 ligas
-y guarda el Brier agregado. Compara con el baseline actual (weight=12).
+con rho estimado walk-forward por liga/temporada (sin leakage).
 
 Uso: python scripts/grid_search_weight.py
 """
 import sys
-import json
 from pathlib import Path
 
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
-from src.config import PROCESSED_DATA_DIR, OUTPUT_DIR, EVAL_LEAGUES
+from src.config import PROCESSED_DATA_DIR, EVAL_LEAGUES
 from src.feature_engineering import enrich_fixture
-from src.models import predict_match
+from src.models import predict_match, estimate_rho
 from src.logger import get_logger
 
 logger = get_logger("grid_weight")
 
 ENRICHED = PROCESSED_DATA_DIR / "history_with_xg.parquet"
-RHO_CACHE = OUTPUT_DIR / "rho_cache.json"
 TEST_SEASONS = ["2025", "2026"]
 MIN_TRAIN = 100
+MIN_RHO_LAMBDAS = 50
+N_RHO_MATCHES = 300
 WEIGHTS = [4, 6, 8, 12, 16]
 
 
@@ -35,18 +35,48 @@ def brier_multiclass(y_idx, probs):
     return total / 3
 
 
-def run_for_weight(history, rho_cache, weight):
-    """Ejecuta walk-forward completo con un weight concreto. Devuelve Brier agregado."""
+def compute_rho_walk_forward(train_df, n_matches=N_RHO_MATCHES):
+    """Estima rho con SOLO train_df (walk-forward interno, sin leakage)."""
+    if len(train_df) < MIN_TRAIN:
+        return -0.13, 0
+
+    sample = train_df.sort_values("date").tail(n_matches).copy()
+    rows = []
+    for _, match in sample.iterrows():
+        history = train_df[train_df["date"] < match["date"]]
+        if len(history) < 10:
+            continue
+        try:
+            f = enrich_fixture(match, history, as_of_date=match["date"])
+            rows.append({
+                "lambda_home": f["lambda_home"],
+                "lambda_away": f["lambda_away"],
+                "home_goals": int(match["home_goals"]),
+                "away_goals": int(match["away_goals"]),
+            })
+        except Exception:
+            continue
+
+    if len(rows) < MIN_RHO_LAMBDAS:
+        return -0.13, len(rows)
+
+    return estimate_rho(pd.DataFrame(rows)), len(rows)
+
+
+def run_for_weight(history, weight):
+    """Ejecuta walk-forward completo con un weight concreto. rho walk-forward por liga/temporada."""
     rows = []
     for league in EVAL_LEAGUES:
-        rho = float(rho_cache.get(league, {}).get("rho", -0.13))
         league_df = history[history["competition"] == league].sort_values("date")
 
         for season in TEST_SEASONS:
-            train = league_df[league_df["season"].astype(str) < season]
-            test = league_df[league_df["season"].astype(str) == season]
+            train = league_df[league_df["season"].astype(str) < season].copy()
+            test = league_df[league_df["season"].astype(str) == season].copy()
             if len(train) < MIN_TRAIN or len(test) == 0:
                 continue
+
+            rho, n_lambdas = compute_rho_walk_forward(train, n_matches=N_RHO_MATCHES)
+            logger.info(f"[{league}/{season}] rho={rho:+.4f} (n_lambdas={n_lambdas})")
 
             for _, row in test.iterrows():
                 try:
@@ -72,9 +102,6 @@ def run_for_weight(history, rho_cache, weight):
 
 
 def main():
-    with RHO_CACHE.open() as f:
-        rho_cache = json.load(f).get("leagues", {})
-
     history = pd.read_parquet(ENRICHED)
     history["date"] = pd.to_datetime(history["date"]).dt.tz_localize(None)
 
@@ -83,7 +110,7 @@ def main():
 
     results = {}
     for w in WEIGHTS:
-        brier, n = run_for_weight(history, rho_cache, w)
+        brier, n = run_for_weight(history, w)
         if brier is None:
             print(f"{w:>8} | ERROR")
             continue
