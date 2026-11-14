@@ -1,5 +1,5 @@
 """
-Tests de desvig, validación y Kelly fraccionado.
+Tests de desvig, validación, Kelly fraccionado y determinación de fuente CLV.
 """
 import sys
 from pathlib import Path
@@ -13,6 +13,7 @@ from src.evaluation_helpers import (
     validate_odds,
     validate_prob,
     kelly_fraction,
+    determine_clv_source,
 )
 
 
@@ -114,3 +115,48 @@ def test_kelly_fraction_half():
     k25 = kelly_fraction(0.5, 3.0, fraction=0.25)
     k50 = kelly_fraction(0.5, 3.0, fraction=0.5)
     assert k50 == pytest.approx(k25 * 2, abs=0.01)
+
+
+# ─── determine_clv_source ────────────────────────────────────────────
+
+def test_determine_clv_source_pinnacle():
+    """Con PSCD válido: Pinnacle, comparable."""
+    src, comp = determine_clv_source(2.5, 2.6)
+    assert src == "Pinnacle"
+    assert comp is True
+
+
+def test_determine_clv_source_avg_only():
+    """Solo AvgCD: Avg, no comparable."""
+    src, comp = determine_clv_source(None, 2.6)
+    assert src == "Avg"
+    assert comp is False
+
+
+def test_determine_clv_source_none():
+    """Sin cierre: vacío, no comparable."""
+    src, comp = determine_clv_source(None, None)
+    assert src == ""
+    assert comp is False
+
+
+def test_determine_clv_source_nan():
+    """NaN en PSCD: fallback a Avg si existe."""
+    import pandas as pd
+    src, comp = determine_clv_source(pd.NA, 2.6)
+    assert src == "Avg"
+    assert comp is False
+
+
+def test_determine_clv_source_pscd_zero():
+    """PSCD=0: tratar como inválido, fallback a Avg."""
+    src, comp = determine_clv_source(0.0, 2.6)
+    assert src == "Avg"
+    assert comp is False
+
+
+def test_determine_clv_source_pscd_negative():
+    """PSCD negativo: tratar como inválido."""
+    src, comp = determine_clv_source(-1.0, 2.6)
+    assert src == "Avg"
+    assert comp is False
