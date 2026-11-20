@@ -41,3 +41,5 @@ data/processed/*.bak
 src/*.bak 
 scripts/*.bak 
 output/*.bak 
+data/processed/fotmob_xg.parquet 
+data/raw/fotmob/ 
