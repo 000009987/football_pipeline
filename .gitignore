@@ -43,3 +43,5 @@ scripts/*.bak
 output/*.bak 
 data/processed/fotmob_xg.parquet 
 data/raw/fotmob/ 
+logs_fotmob_*.log 
+_fotmob_matchdetails_sample.json 
